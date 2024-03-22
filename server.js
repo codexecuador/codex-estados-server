@@ -45,17 +45,17 @@ app.post('/login', (req, res) => {
       console.log(error);
       res.status(500).send('Error en el servidor');
     } else if (results.length === 0) {
-      res.status(401).send('Credenciales inválidas');
+      res.status(401).send('Usuario no encontrado');
     } else {
       const user = results[0];
       const hashedPassword = hashPassword(password);
 
-      if (hashedPassword === user.password) {
+      if (hashedPassword === user.user_pass) {
         // Contraseña coincidente, generar y devolver el token JWT
         const token = jwt.sign({ userId: user.id }, 'secreto_del_token');
         res.json({ token });
       } else {
-        res.status(401).send('Credenciales inválidas');
+        res.status(401).send('Contraseña incorrecta');
       }
     }
   });
