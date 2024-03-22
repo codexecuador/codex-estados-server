@@ -1,7 +1,7 @@
 const express = require('express');
 const mysql = require('mysql');
 const jwt = require('jsonwebtoken');
-const phpass = require('phpass'); // Importa la biblioteca Phpass
+const bcrypt = require('bcrypt');
 const cors = require('cors');
 
 const app = express();
@@ -10,7 +10,7 @@ const PORT = 8760;
 app.use(express.json());
 app.use(cors());
 
-// Configuración de la conexión a la base de datos
+// Configurar la conexión a la base de datos
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'asesunnr_cdx',
@@ -24,14 +24,6 @@ db.connect(err => {
   }
   console.log('Conexión a la base de datos establecida');
 });
-
-// Instancia de Phpass
-const hasher = new phpass.HashPassword();
-
-// Función para verificar la contraseña utilizando Phpass
-function verifyPassword(password, hashedPassword) {
-  return hasher.checkPassword(password, hashedPassword);
-}
 
 app.get('/', (req, res) => {
   res.send('Hello world');
@@ -50,15 +42,20 @@ app.post('/login', (req, res) => {
       res.status(401).send('Usuario no encontrado');
     } else {
       const user = results[0];
-      const hashedPassword = user.user_pass;
 
-      if (verifyPassword(password, hashedPassword)) {
-        // Contraseña coincidente, generar y devolver el token JWT
-        const token = jwt.sign({ userId: user.id }, 'secreto_del_token');
-        res.json({ token });
-      } else {
-        res.status(401).send('Contraseña incorrecta');
-      }
+      // Comparar la contraseña proporcionada con la contraseña almacenada usando bcrypt
+      bcrypt.compare(password, user.user_pass, (err, result) => {
+        if (err) {
+          console.log(err);
+          res.status(500).send('Error en el servidor');
+        } else if (result) {
+          // Contraseña coincidente, generar y devolver el token JWT
+          const token = jwt.sign({ userId: user.id }, 'secreto_del_token');
+          res.json({ token });
+        } else {
+          res.status(401).send('Contraseña incorrecta');
+        }
+      });
     }
   });
 });
