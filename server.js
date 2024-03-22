@@ -1,7 +1,7 @@
 const express = require('express');
 const mysql = require('mysql');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
+const phpass = require('phpass'); // Importa la biblioteca Phpass
 const cors = require('cors');
 
 const app = express();
@@ -10,7 +10,7 @@ const PORT = 8760;
 app.use(express.json());
 app.use(cors());
 
-// Configurar la conexión a la base de datos
+// Configuración de la conexión a la base de datos
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'asesunnr_cdx',
@@ -25,15 +25,17 @@ db.connect(err => {
   console.log('Conexión a la base de datos establecida');
 });
 
+// Instancia de Phpass
+const hasher = new phpass.HashPassword();
+
+// Función para verificar la contraseña utilizando Phpass
+function verifyPassword(password, hashedPassword) {
+  return hasher.checkPassword(password, hashedPassword);
+}
+
 app.get('/', (req, res) => {
   res.send('Hello world');
 });
-
-// Función para generar un hash de contraseña con un salt fijo
-function hashPassword(password) {
-  const salt = 'salt_fijo_conocido'; // Salt fijo conocido
-  return crypto.createHash('sha256').update(password + salt).digest('hex');
-}
 
 // Endpoint para el inicio de sesión
 app.post('/login', (req, res) => {
@@ -48,9 +50,9 @@ app.post('/login', (req, res) => {
       res.status(401).send('Usuario no encontrado');
     } else {
       const user = results[0];
-      const hashedPassword = hashPassword(password);
+      const hashedPassword = user.user_pass;
 
-      if (hashedPassword === user.user_pass) {
+      if (verifyPassword(password, hashedPassword)) {
         // Contraseña coincidente, generar y devolver el token JWT
         const token = jwt.sign({ userId: user.id }, 'secreto_del_token');
         res.json({ token });
