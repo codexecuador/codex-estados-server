@@ -34,14 +34,15 @@ app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
   // Verificar si el usuario existe en la base de datos
-  db.query('SELECT * FROM users WHERE username = ?', [username], async (error, results) => {
+  db.query('SELECT * FROM cdx_users WHERE user_login = ?', [username], async (error, results) => {
     if (error) {
       console.log(error);
-      res.status(500).send('Error en el servidor');
+      res.status(500).send('Error en el servidor' + error);
     } else if (results.length === 0) {
       res.status(401).send('Credenciales inválidas');
     } else {
       const user = results[0];
+      res.status(401).send('Credenciales inválidas' + user);
       // Aquí puedes continuar con la lógica para generar y devolver el token JWT
     }
   });
