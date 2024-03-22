@@ -1,7 +1,7 @@
 const express = require('express');
 const mysql = require('mysql');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const cors = require('cors');
 
 const app = express();
@@ -29,6 +29,16 @@ app.get('/', (req, res) => {
   res.send('Hello world');
 });
 
+// Función para generar un salt aleatorio
+function generateSalt() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+// Función para generar un hash de contraseña con un salt aleatorio
+function hashPassword(password, salt) {
+  return crypto.createHash('sha256').update(password + salt).digest('hex');
+}
+
 // Endpoint para el inicio de sesión
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
@@ -42,20 +52,15 @@ app.post('/login', (req, res) => {
       res.status(401).send('Usuario no encontrado');
     } else {
       const user = results[0];
+      const hashedPassword = hashPassword(password, user.salt); // Utilizar el salt almacenado en la base de datos
 
-      // Comparar la contraseña proporcionada con la contraseña almacenada usando bcrypt
-      bcrypt.compare(password, user.user_pass, (err, result) => {
-        if (err) {
-          console.log(err);
-          res.status(500).send('Error en el servidor');
-        } else if (result) {
-          // Contraseña coincidente, generar y devolver el token JWT
-          const token = jwt.sign({ userId: user.id }, 'secreto_del_token');
-          res.json({ token });
-        } else {
-          res.status(401).send('Contraseña incorrecta');
-        }
-      });
+      if (hashedPassword === user.user_pass) {
+        // Contraseña coincidente, generar y devolver el token JWT
+        const token = jwt.sign({ userId: user.id }, 'secreto_del_token');
+        res.json({ token });
+      } else {
+        res.status(401).send('Contraseña incorrecta');
+      }
     }
   });
 });
