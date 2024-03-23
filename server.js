@@ -47,7 +47,9 @@ app.post('/login', (req, res) => {
       if (isPasswordCorrect) {
         // Contraseña correcta, generar y devolver el token JWT
         const token = jwt.sign({ userId: user.id }, 'secreto_del_token');
-        res.json({ token });
+        const userId = user.ID;
+        const userName = user.display_name;
+        res.json({ token, userId, userName });
       } else {
         res.status(401).send('Contraseña incorrecta');
       }
