@@ -45,10 +45,11 @@ db.connect(err => {
 });
 
 app.get('/', (req, res) => {
-  res.send('Hello world');
+  res.send('Servidor en línea');
 });
 
-// Endpoint para el inicio de sesión
+// ************* Endpoint para el inicio de sesión y creación de tabla ************* //
+
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
@@ -69,18 +70,89 @@ app.post('/login', (req, res) => {
         isPasswordCorrect = hasher.CheckPassword(password, user.user_pass);
       }
 
-      console.log(isPasswordCorrect)
-
       if (isPasswordCorrect) {
         // Contraseña correcta, generar y devolver el token JWT
-        const token = jwt.sign({ userId: user.id }, 'secreto_del_token');
-        res.json({ token });
+        const token = jwt.sign({ userId: user.ID, userName: user.display_name }, 'secreto_del_token');
+
+        // Verificar si existe una fila en la tabla cdx_txt para el usuario
+        db.query('SELECT * FROM cdx_txt WHERE user_id = ?', [user.ID], async (error, results) => {
+          if (error) {
+            console.log(error);
+            res.status(500).send('Error en el servidor');
+          } else if (results.length === 0) {
+            // Si no existe una fila, crear una nueva fila en la tabla
+            db.query(
+              'INSERT INTO cdx_txt (user_id, yearCurrent, yearPrevious, downloads) VALUES (?, ?, ?, ?)',
+              [user.ID, getCurrentYear(), getPreviousYear(), JSON.stringify({
+                situacion: 0,
+                resultados: 0,
+                patrimonio: 0,
+                efectivo: 0
+              })],
+              (error, result) => {
+                if (error) {
+                  console.log(error);
+                  res.status(500).send('Error en el servidor');
+                } else {
+                  console.log('Nueva fila creada en cdx_txt para el usuario:', user.ID);
+                  res.json({ token });
+                }
+              }
+            );
+          } else {
+            // Si ya existe una fila, devolver el token sin crear una nueva fila
+            res.json({ token });
+          }
+        });
       } else {
         res.status(401).send('Contraseña incorrecta');
       }
     }
   });
 });
+
+// Función para obtener el año actual
+function getCurrentYear() {
+  return new Date().getFullYear();
+}
+
+// Función para obtener el año anterior
+function getPreviousYear() {
+  return new Date().getFullYear() - 1;
+}
+
+
+
+// ************* Endpoint para el retorno de información con token ************* //
+
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization;
+
+  if (!token) return res.status(401).json({ message: 'No hay token proporcionado' });
+
+  jwt.verify(token.split(' ')[1], 'secreto_del_token', (err, decoded) => {
+    if (err) {
+      console.error('Error al verificar el token:', err);
+      return res.status(403).json({ message: 'Token inválido' });
+    }
+    req.userId = decoded.userId;
+    req.userName = decoded.userName;
+    next();
+  });
+};
+
+
+// Ejemplo de cómo utilizar la función de verificación en una ruta protegida
+app.get('/api/data', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const userName = req.userName;
+
+  res.json({ userId, userName });
+});
+
+
+
+// ************* Puerto ************* //
 
 app.listen(8760, () => {
   console.log(`Servidor Express corriendo en el puerto ${PORT}`);
