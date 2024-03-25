@@ -11,12 +11,31 @@ app.use(express.json());
 app.use(cors());
 
 // Configurar la conexión a la base de datos
-const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'asesunnr_cdx',
-  password: 'p49)iXS17@',
-  database: 'asesunnr_cdx'
-});
+let dbConfig;
+
+process.env.NODE_ENV = process.env.NODE_ENV || 'development';
+
+console.log(process.env.NODE_ENV);
+
+if (process.env.NODE_ENV === 'development') {
+  // Configuración para entorno de desarrollo
+  dbConfig = {
+    host: 'localhost',
+    user: 'root',
+    password: '',
+    database: 'codex_txt'
+  };
+} else {
+  // Configuración para otros entornos (por ejemplo, producción)
+  dbConfig = {
+    host: 'localhost',
+    user: 'asesunnr_cdx',
+    password: 'p49)iXS17@',
+    database: 'asesunnr_cdx'
+  };
+}
+
+const db = mysql.createConnection(dbConfig);
 
 db.connect(err => {
   if (err) {
@@ -42,14 +61,20 @@ app.post('/login', (req, res) => {
       res.status(401).send('Usuario no encontrado');
     } else {
       const user = results[0];
-      const isPasswordCorrect = hasher.CheckPassword(password, user.user_pass);
+      let isPasswordCorrect;
+
+      if (process.env.NODE_ENV === 'development') {
+        isPasswordCorrect = (password === user.user_pass);
+      } else {
+        isPasswordCorrect = hasher.CheckPassword(password, user.user_pass);
+      }
+
+      console.log(isPasswordCorrect)
 
       if (isPasswordCorrect) {
         // Contraseña correcta, generar y devolver el token JWT
         const token = jwt.sign({ userId: user.id }, 'secreto_del_token');
-        const userId = user.ID;
-        const userName = user.display_name;
-        res.json({ token, userId, userName });
+        res.json({ token });
       } else {
         res.status(401).send('Contraseña incorrecta');
       }
