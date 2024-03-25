@@ -3,13 +3,15 @@ const mysql = require('mysql');
 const jwt = require('jsonwebtoken');
 const hasher = require('wordpress-hash-node');
 const cors = require('cors');
+const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = 8760;
 
-app.use(express.json());
-app.use(cors());
+app.use(bodyParser.json({limit: '50mb'}))
+app.use(bodyParser.urlencoded({ limit: '50mb',extended: true }));
 
+app.use(cors());
 // Configurar la conexión a la base de datos
 let dbConfig;
 
@@ -142,12 +144,67 @@ const verifyToken = (req, res, next) => {
 };
 
 
-// Ejemplo de cómo utilizar la función de verificación en una ruta protegida
+// Función de verificación en la ruta protegida
 app.get('/api/data', verifyToken, (req, res) => {
   const userId = req.userId;
   const userName = req.userName;
+  let ciasDataIsEmpty;
 
-  res.json({ userId, userName });
+  // Consultar la base de datos para verificar si ciasData está vacío para el usuario
+  const sql = 'SELECT * FROM cdx_txt WHERE user_id = ?';
+  db.query(sql, [userId], (err, result) => {
+    if (err) {
+      console.error('Error al obtener datos de la base de datos:', err);
+      return res.status(500).json({ error: 'Error interno del servidor' });
+    }
+
+    if (result.length === 0) {
+      // No se encontraron filas para el usuario
+      return res.status(404).json({ error: 'No se encontraron datos para el usuario' });
+    }
+
+    // Verificar si ciasData está vacío
+    const userRow = result[0];
+
+    // Enviar la respuesta con userId, userName y el indicador de si ciasData está vacío
+    res.json({ userId, userName, userRow });
+  });
+});
+
+// ************* Endpoint para la actualización ************* //
+
+app.put('/api/update', (req, res) => {
+  const { data, dataName, userId } = req.body;
+
+  // Validar que los parámetros requeridos estén presentes
+  if (!data || !dataName || !userId) {
+    return res.status(400).send('Parámetros faltantes');
+  }
+
+  // Esto es importante para prevenir ataques de inyección de SQL
+  const allowedFields = ['originalData', 'ciasData', 'selecciones', 'saldoECP', 'saldoEFE', 'saldoEFEDirecto', 'personalData', 'downloads', 'rawMapping', 'cuentasASeleccionar']; 
+  if (!allowedFields.includes(dataName)) {
+    return res.status(400).send('Nombre de campo no válido');
+  }
+
+  // Serializar los nuevos datos a formato JSON
+  const newDataSerializada = JSON.stringify(data);
+
+  // Construir y ejecutar la consulta SQL
+  const sql = `UPDATE cdx_txt SET ${dataName} = ? WHERE user_id = ?`;
+  db.query(sql, [newDataSerializada, userId], (err, result) => {
+    if (err) {
+      console.error('Error al actualizar datos: ' + err.message);
+      return res.status(500).send('Error interno del servidor');
+    }
+    // Verificar si se actualizó alguna fila
+    if (result.affectedRows === 0) {
+      console.log(`No se encontró el usuario con ID ${userId}`);
+      return res.status(404).send('Usuario no encontrado');
+    }
+    console.log(`Datos actualizados correctamente en ${dataName} para el usuario ID ${userId}`);
+    res.send('Datos actualizados correctamente');
+  });
 });
 
 
