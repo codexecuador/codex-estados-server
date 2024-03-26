@@ -115,12 +115,12 @@ app.post('/login', (req, res) => {
 
 // Función para obtener el año actual
 function getCurrentYear() {
-  return new Date().getFullYear();
+  return new Date().getFullYear() - 1;
 }
 
 // Función para obtener el año anterior
 function getPreviousYear() {
-  return new Date().getFullYear() - 1;
+  return new Date().getFullYear() - 2;
 }
 
 
