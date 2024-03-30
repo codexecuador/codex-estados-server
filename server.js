@@ -182,7 +182,7 @@ app.put('/api/update', (req, res) => {
   }
 
   // Esto es importante para prevenir ataques de inyección de SQL
-  const allowedFields = ['originalData', 'ciasData', 'selecciones', 'saldoECP', 'saldoEFE', 'saldoEFEDirecto', 'personalData', 'downloads', 'rawMapping', 'cuentasASeleccionar']; 
+  const allowedFields = ['originalData', 'ciasData', 'sriData', 'selecciones', 'saldoECP', 'saldoEFE', 'saldoEFEDirecto', 'personalData', 'downloads', 'rawMapping', 'cuentasASeleccionar']; 
   if (!allowedFields.includes(dataName)) {
     return res.status(400).send('Nombre de campo no válido');
   }
