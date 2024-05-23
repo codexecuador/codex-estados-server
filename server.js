@@ -8,8 +8,8 @@ const bodyParser = require('body-parser');
 const app = express();
 const PORT = 8760;
 
-app.use(bodyParser.json({limit: '50mb'}))
-app.use(bodyParser.urlencoded({ limit: '50mb',extended: true }));
+app.use(bodyParser.json({ limit: '50mb' }))
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 app.use(cors());
 // Configurar la conexión a la base de datos
@@ -73,37 +73,82 @@ app.post('/login', (req, res) => {
       }
 
       if (isPasswordCorrect) {
-        // Contraseña correcta, generar y devolver el token JWT
-        const token = jwt.sign({ userId: user.ID, userName: user.display_name }, 'secreto_del_token');
-
-        // Verificar si existe una fila en la tabla cdx_txt para el usuario
-        db.query('SELECT * FROM cdx_txt WHERE user_id = ?', [user.ID], async (error, results) => {
+        // Contraseña correcta, realizar la consulta adicional a cdx_usermeta
+        db.query('SELECT meta_value FROM cdx_usermeta WHERE user_id = ? AND meta_key = ?', [user.ID, 'cdx_user_level'], async (error, metaResults) => {
           if (error) {
             console.log(error);
             res.status(500).send('Error en el servidor');
-          } else if (results.length === 0) {
-            // Si no existe una fila, crear una nueva fila en la tabla
-            db.query(
-              'INSERT INTO cdx_txt (user_id, yearCurrent, yearPrevious, downloads) VALUES (?, ?, ?, ?)',
-              [user.ID, getCurrentYear(), getPreviousYear(), JSON.stringify({
-                situacion: 0,
-                resultados: 0,
-                patrimonio: 0,
-                efectivo: 0
-              })],
-              (error, result) => {
-                if (error) {
-                  console.log(error);
-                  res.status(500).send('Error en el servidor');
+          } else {
+            const userLevel = metaResults.length > 0 ? metaResults[0].meta_value : null;
+
+            // Verificar la suscripción del usuario en cdx_pms_member_subscriptions
+            db.query('SELECT * FROM cdx_pms_member_subscriptions WHERE user_id = ?', [user.ID], async (error, subscriptionResults) => {
+              if (error) {
+                console.log(error);
+                res.status(500).send('Error en el servidor');
+              } else {
+                const validPlans = [3865, 601, 18568];
+                let hasValidSubscription = false;
+                let expirationDate = null;
+
+                for (const subscription of subscriptionResults) {
+                  if (validPlans.includes(subscription.subscription_plan_id) && subscription.status === 'active') {
+                    hasValidSubscription = true;
+                    expirationDate = subscription.expiration_date;
+                    break;
+                  }
+                }
+
+                if (!hasValidSubscription) {
+                  if (subscriptionResults.length === 0 || !validPlans.includes(subscriptionResults[0].subscription_plan_id)) {
+                    res.status(403).send('Su suscripción actual de Codex no le da acceso a la plataforma.');
+                  } else if (subscriptionResults[0].status !== 'active') {
+                    res.status(403).send('Su suscripción ha expirado.');
+                  } else {
+                    res.status(403).send('No tiene una suscripción registrada en Codex.');
+                  }
                 } else {
-                  console.log('Nueva fila creada en cdx_txt para el usuario:', user.ID);
-                  res.json({ token });
+                  // Generar el token JWT incluyendo el nivel de usuario y la fecha de expiración de la suscripción
+                  const token = jwt.sign({
+                    userId: user.ID,
+                    userName: user.display_name,
+                    userLevel: userLevel,
+                    expirationDate: expirationDate
+                  }, 'secreto_del_token');
+
+                  // Verificar si existe una fila en la tabla cdx_txt para el usuario
+                  db.query('SELECT * FROM cdx_txt WHERE user_id = ?', [user.ID], async (error, results) => {
+                    if (error) {
+                      console.log(error);
+                      res.status(500).send('Error en el servidor');
+                    } else if (results.length === 0) {
+                      // Si no existe una fila, crear una nueva fila en la tabla
+                      db.query(
+                        'INSERT INTO cdx_txt (user_id, yearCurrent, yearPrevious, downloads) VALUES (?, ?, ?, ?)',
+                        [user.ID, getCurrentYear(), getPreviousYear(), JSON.stringify({
+                          situacion: 0,
+                          resultados: 0,
+                          patrimonio: 0,
+                          efectivo: 0
+                        })],
+                        (error, result) => {
+                          if (error) {
+                            console.log(error);
+                            res.status(500).send('Error en el servidor');
+                          } else {
+                            console.log('Nueva fila creada en cdx_txt para el usuario:', user.ID);
+                            res.json({ token });
+                          }
+                        }
+                      );
+                    } else {
+                      // Si ya existe una fila, devolver el token sin crear una nueva fila
+                      res.json({ token });
+                    }
+                  });
                 }
               }
-            );
-          } else {
-            // Si ya existe una fila, devolver el token sin crear una nueva fila
-            res.json({ token });
+            });
           }
         });
       } else {
@@ -139,6 +184,8 @@ const verifyToken = (req, res, next) => {
     }
     req.userId = decoded.userId;
     req.userName = decoded.userName;
+    req.userLevel = decoded.userLevel;
+    req.expirationDate = decoded.expirationDate;
     next();
   });
 };
@@ -148,7 +195,7 @@ const verifyToken = (req, res, next) => {
 app.get('/api/data', verifyToken, (req, res) => {
   const userId = req.userId;
   const userName = req.userName;
-  let ciasDataIsEmpty;
+  const userLevel = req.userLevel;
 
   // Consultar la base de datos para verificar si ciasData está vacío para el usuario
   const sql = 'SELECT * FROM cdx_txt WHERE user_id = ?';
@@ -163,11 +210,16 @@ app.get('/api/data', verifyToken, (req, res) => {
       return res.status(404).json({ error: 'No se encontraron datos para el usuario' });
     }
 
-    // Verificar si ciasData está vacío
+    const expirationDate = new Date(req.expirationDate);
+    const currentDate = new Date();
+
+    if (expirationDate < currentDate) {
+      return res.status(403).json({ valid: false, message: 'Su suscripción ha expirado.' });
+    }
+
     const userRow = result[0];
 
-    // Enviar la respuesta con userId, userName y el indicador de si ciasData está vacío
-    res.json({ userId, userName, userRow });
+    res.json({ userId, userName, userLevel, userRow });
   });
 });
 
@@ -182,7 +234,7 @@ app.put('/api/update', (req, res) => {
   }
 
   // Esto es importante para prevenir ataques de inyección de SQL
-  const allowedFields = ['originalData', 'ciasData', 'sriData', 'selecciones', 'saldoECP', 'saldoEFE', 'saldoEFEDirecto', 'personalData', 'downloads', 'rawMapping', 'cuentasASeleccionar']; 
+  const allowedFields = ['originalData', 'ciasData', 'sriData', 'selecciones', 'saldoECP', 'saldoEFE', 'saldoEFEDirecto', 'personalData', 'downloads', 'rawMapping', 'cuentasASeleccionar'];
   if (!allowedFields.includes(dataName)) {
     return res.status(400).send('Nombre de campo no válido');
   }
@@ -202,7 +254,7 @@ app.put('/api/update', (req, res) => {
       console.log(`No se encontró el usuario con ID ${userId}`);
       return res.status(404).send('Usuario no encontrado');
     }
-    console.log(`Datos actualizados correctamente en ${dataName} para el usuario ID ${userId}`);
+    // console.log(`Datos actualizados correctamente en ${dataName} para el usuario ID ${userId}`);
     res.send('Datos actualizados correctamente');
   });
 });
