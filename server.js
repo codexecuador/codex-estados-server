@@ -50,22 +50,23 @@ app.get('/', (req, res) => {
   res.send('Servidor en línea');
 });
 
-// ************* Endpoint para el inicio de sesión y creación de tabla ************* //
+// ************* Endpoint para el inicio de sesión************* //
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
   // Verificar si el usuario existe en la base de datos
   db.query('SELECT * FROM cdx_users WHERE user_login = ?', [username], async (error, results) => {
-    if (error) {
-      console.log(error);
+
+    if (error) { // Caso en el que no se pueda conectar con la base de datos
       res.status(500).send('Error en el servidor');
-    } else if (results.length === 0) {
+    } else if (results.length === 0) { // Caso en el que no se encuentra un usuario con ese nombre
       res.status(401).send('Usuario no encontrado');
-    } else {
+    } else { // Caso en el que sí se encuentra un usuario con ese nombre
       const user = results[0];
       let isPasswordCorrect;
 
+      // Chequeo de la contraseña
       if (process.env.NODE_ENV === 'development') {
         isPasswordCorrect = (password === user.user_pass);
       } else {
@@ -73,10 +74,9 @@ app.post('/login', (req, res) => {
       }
 
       if (isPasswordCorrect) {
-        // Contraseña correcta, realizar la consulta adicional a cdx_usermeta
+        // Contraseña correcta, realizar la consulta adicional a cdx_usermeta para obtener el nivel de usuario
         db.query('SELECT meta_value FROM cdx_usermeta WHERE user_id = ? AND meta_key = ?', [user.ID, 'cdx_user_level'], async (error, metaResults) => {
           if (error) {
-            console.log(error);
             res.status(500).send('Error en el servidor');
           } else {
             const userLevel = metaResults.length > 0 ? metaResults[0].meta_value : null;
@@ -84,21 +84,23 @@ app.post('/login', (req, res) => {
             // Verificar la suscripción del usuario en cdx_pms_member_subscriptions
             db.query('SELECT * FROM cdx_pms_member_subscriptions WHERE user_id = ?', [user.ID], async (error, subscriptionResults) => {
               if (error) {
-                console.log(error);
                 res.status(500).send('Error en el servidor');
               } else {
-                const validPlans = [3865, 601, 18568];
+                const validPlans = [3865, 601, 18568]; // IDs de planes de suscripción válidos para usar la plataforma
                 let hasValidSubscription = false;
                 let expirationDate = null;
 
+                // Verificación de que la suscripción actual del usuario no esté expirada
                 for (const subscription of subscriptionResults) {
                   if (validPlans.includes(subscription.subscription_plan_id) && subscription.status === 'active') {
                     hasValidSubscription = true;
+                    // Almacenamiento de la fecha de expiración de la suscripción
                     expirationDate = subscription.expiration_date;
                     break;
                   }
                 }
 
+                // Caso en el que el usuario no cumple con los requisitos para usar la plataforma
                 if (!hasValidSubscription) {
                   if (subscriptionResults.length === 0 || !validPlans.includes(subscriptionResults[0].subscription_plan_id)) {
                     res.status(403).send('Su suscripción actual de Codex no le da acceso a la plataforma.');
@@ -108,7 +110,7 @@ app.post('/login', (req, res) => {
                     res.status(403).send('No tiene una suscripción registrada en Codex.');
                   }
                 } else {
-                  // Generar el token JWT incluyendo el nivel de usuario y la fecha de expiración de la suscripción
+                  // Generación del token JWT
                   const token = jwt.sign({
                     userId: user.ID,
                     userName: user.display_name,
@@ -116,61 +118,21 @@ app.post('/login', (req, res) => {
                     expirationDate: expirationDate
                   }, 'secreto_del_token');
 
-                  // Verificar si existe una fila en la tabla cdx_txt para el usuario
-                  db.query('SELECT * FROM cdx_txt WHERE user_id = ?', [user.ID], async (error, results) => {
-                    if (error) {
-                      console.log(error);
-                      res.status(500).send('Error en el servidor');
-                    } else if (results.length === 0) {
-                      // Si no existe una fila, crear una nueva fila en la tabla
-                      db.query(
-                        'INSERT INTO cdx_txt (user_id, yearCurrent, yearPrevious, downloads) VALUES (?, ?, ?, ?)',
-                        [user.ID, getCurrentYear(), getPreviousYear(), JSON.stringify({
-                          situacion: 0,
-                          resultados: 0,
-                          patrimonio: 0,
-                          efectivo: 0
-                        })],
-                        (error, result) => {
-                          if (error) {
-                            console.log(error);
-                            res.status(500).send('Error en el servidor');
-                          } else {
-                            console.log('Nueva fila creada en cdx_txt para el usuario:', user.ID);
-                            res.json({ token });
-                          }
-                        }
-                      );
-                    } else {
-                      // Si ya existe una fila, devolver el token sin crear una nueva fila
-                      res.json({ token });
-                    }
-                  });
+                  res.json({ token });
                 }
               }
             });
           }
         });
       } else {
+        // Caso en el que la contraseña no coincida
         res.status(401).send('Contraseña incorrecta');
       }
     }
   });
 });
 
-// Función para obtener el año actual
-function getCurrentYear() {
-  return new Date().getFullYear() - 1;
-}
-
-// Función para obtener el año anterior
-function getPreviousYear() {
-  return new Date().getFullYear() - 2;
-}
-
-
-
-// ************* Endpoint para el retorno de información con token ************* //
+// ************* Función para decriptar un token ************* //
 
 const verifyToken = (req, res, next) => {
   const token = req.headers.authorization;
@@ -179,7 +141,6 @@ const verifyToken = (req, res, next) => {
 
   jwt.verify(token.split(' ')[1], 'secreto_del_token', (err, decoded) => {
     if (err) {
-      console.error('Error al verificar el token:', err);
       return res.status(403).json({ message: 'Token inválido' });
     }
     req.userId = decoded.userId;
@@ -190,24 +151,70 @@ const verifyToken = (req, res, next) => {
   });
 };
 
+// ************* Endpoint para la creación de nuevos datos (CREATE) ************* //
 
-// Función de verificación en la ruta protegida
+app.post('/api/create', verifyToken, (req, res) => {
+  const { yearCurrent, yearPrevious, personalData } = req.body;
+  const userId = req.userId;
+
+  // Validar que los parámetros requeridos estén presentes
+  if (!yearCurrent || !yearPrevious || !personalData) {
+    return res.status(400).send('Parámetros faltantes');
+  }
+
+  // Verificar el número de entradas existentes para el usuario
+  const checkSql = 'SELECT COUNT(*) AS count FROM cdx_txt WHERE user_id = ?';
+  db.query(checkSql, [userId], (err, results) => {
+    if (err) {
+      console.error('Error al verificar el número de entradas: ' + err.message);
+      return res.status(500).send('Error interno del servidor');
+    }
+
+    const count = results[0].count;
+    if (count >= 3) {
+      return res.status(403).send('No se pueden crear más datos porque se alcanzó el límite.');
+    }
+
+    // Serializar los nuevos datos a formato JSON
+    const personalDataSerialized = JSON.stringify(personalData);
+    const downloadsSerialized = JSON.stringify({
+      situacion: 0,
+      resultados: 0,
+      patrimonio: 0,
+      efectivo: 0
+    });
+
+    // Construir y ejecutar la consulta SQL
+    const insertSql = 'INSERT INTO cdx_txt (user_id, yearCurrent, yearPrevious, personalData, downloads) VALUES (?, ?, ?, ?, ?)';
+    db.query(insertSql, [userId, yearCurrent, yearPrevious, personalDataSerialized, downloadsSerialized], (err, result) => {
+      if (err) {
+        console.error('Error al crear datos: ' + err.message);
+        return res.status(500).send('Error interno del servidor');
+      }
+      res.status(201).send('Datos creados correctamente');
+    });
+  });
+});
+
+
+// ************* Endpoint para el retorno de la data de un usuario (READ) ************* //
+
 app.get('/api/data', verifyToken, (req, res) => {
   const userId = req.userId;
-  const userName = req.userName;
-  const userLevel = req.userLevel;
+  const dataId = req.query.dataId;
 
-  // Consultar la base de datos para verificar si ciasData está vacío para el usuario
-  const sql = 'SELECT * FROM cdx_txt WHERE user_id = ?';
-  db.query(sql, [userId], (err, result) => {
+  if (!dataId) {
+    return res.status(400).json({ error: 'Parámetro dataId faltante' });
+  }
+
+  const sql = 'SELECT * FROM cdx_txt WHERE user_id = ? AND ID = ?';
+  db.query(sql, [userId, dataId], (err, result) => {
     if (err) {
-      console.error('Error al obtener datos de la base de datos:', err);
       return res.status(500).json({ error: 'Error interno del servidor' });
     }
 
     if (result.length === 0) {
-      // No se encontraron filas para el usuario
-      return res.status(404).json({ error: 'No se encontraron datos para el usuario' });
+      return res.status(404).json({ error: 'Datos no encontrados' });
     }
 
     const expirationDate = new Date(req.expirationDate);
@@ -219,17 +226,43 @@ app.get('/api/data', verifyToken, (req, res) => {
 
     const userRow = result[0];
 
-    res.json({ userId, userName, userLevel, userRow });
+    res.json({ userRow });
   });
 });
 
-// ************* Endpoint para la actualización ************* //
+// ************* Endpoint para obtener todos los resultados de un usuario ************* //
+
+app.get('/api/all-data', verifyToken, (req, res) => {
+  const userId = req.userId;
+  const userName = req.userName;
+  const userLevel = req.userLevel;
+
+  const expirationDate = new Date(req.expirationDate);
+  const currentDate = new Date();
+
+  if (expirationDate < currentDate) {
+    return res.status(403).json({ valid: false, message: 'Su suscripción ha expirado.' });
+  }
+
+  const sql = 'SELECT ID, yearCurrent, personalData FROM cdx_txt WHERE user_id = ?';
+  db.query(sql, [userId], (err, results) => {
+    if (err) {
+      console.error('Error al obtener datos: ' + err.message);
+      return res.status(500).json({ error: 'Error interno del servidor' });
+    }
+
+    res.json({ userId, userName, userLevel, data: results });
+  });
+});
+
+
+// ************* Endpoint para la actualización (UPDATE) ************* //
 
 app.put('/api/update', (req, res) => {
-  const { data, dataName, userId } = req.body;
+  const { data, dataName, userId, dataId } = req.body;
 
   // Validar que los parámetros requeridos estén presentes
-  if (!data || !dataName || !userId) {
+  if (!data || !dataName || !userId || !dataId) {
     return res.status(400).send('Parámetros faltantes');
   }
 
@@ -243,19 +276,36 @@ app.put('/api/update', (req, res) => {
   const newDataSerializada = JSON.stringify(data);
 
   // Construir y ejecutar la consulta SQL
-  const sql = `UPDATE cdx_txt SET ${dataName} = ? WHERE user_id = ?`;
-  db.query(sql, [newDataSerializada, userId], (err, result) => {
+  const sql = `UPDATE cdx_txt SET ${dataName} = ? WHERE user_id = ? AND ID = ?`;
+  db.query(sql, [newDataSerializada, userId, dataId], (err, result) => {
     if (err) {
-      console.error('Error al actualizar datos: ' + err.message);
       return res.status(500).send('Error interno del servidor');
     }
     // Verificar si se actualizó alguna fila
     if (result.affectedRows === 0) {
-      console.log(`No se encontró el usuario con ID ${userId}`);
-      return res.status(404).send('Usuario no encontrado');
+      return res.status(404).send('Datos no encontrados');
     }
-    // console.log(`Datos actualizados correctamente en ${dataName} para el usuario ID ${userId}`);
     res.send('Datos actualizados correctamente');
+  });
+});
+
+// ************* Endpoint para la actualización de una empresa (UPDATE) ************* //
+
+app.put('/api/update-company', verifyToken, (req, res) => {
+  const { dataId, yearCurrent, yearPrevious, personalData} = req.body;
+  const userId = req.userId;
+
+  if (!yearCurrent || !yearPrevious || !personalData) {
+    return res.status(400).send('Parámetros faltantes');
+  }
+  const updateSql = 'UPDATE cdx_txt SET yearCurrent = ?, yearPrevious = ?, personalData = ? WHERE user_id = ?  AND ID = ?';
+  const personalDataSerialized = JSON.stringify(personalData);
+  db.query(updateSql, [yearCurrent, yearPrevious, personalDataSerialized, userId, dataId], (err, result) => {
+    if (err) {
+      console.error('Error al actualizar datos: ' + err.message);
+      return res.status(500).send('Error interno del servidor');
+    }
+    res.status(200).send('Datos actualizados correctamente');
   });
 });
 
