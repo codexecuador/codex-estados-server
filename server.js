@@ -329,7 +329,7 @@ app.get('/api/get-requests', verifyToken, (req, res) => {
 
 // ************* Endpoint para que el usuario solicite un cambio ************* //
 
-app.put('/api/send-request', verifyToken, (req, res) => {
+app.post('/api/send-request', verifyToken, (req, res) => {
   const { dataId, requestChange } = req.body;
   const userId = req.userId;
 
@@ -337,9 +337,9 @@ app.put('/api/send-request', verifyToken, (req, res) => {
     return res.status(400).send('Parámetros faltantes');
   }
 
-  const updateSql = 'UPDATE cdx_txt SET requestChange = ? WHERE user_id = ?  AND ID = ?';
+  const updateSql = 'UPDATE cdx_txt SET requestChange = ?, requestApproved = ? WHERE user_id = ?  AND ID = ?';
 
-  db.query(updateSql, [requestChange, userId, dataId], (err, result) => {
+  db.query(updateSql, [requestChange, null, userId, dataId], (err, result) => {
     if (err) {
       console.error('Error al actualizar datos: ' + err.message);
       return res.status(500).send('Error interno del servidor');
@@ -354,15 +354,17 @@ app.put('/api/check-request', verifyToken, (req, res) => {
 
   // Nota: verificar el token para revisar el userLevel antes de realizar la operación
 
-  const { dataId, requestChange, approvalStatus } = req.body;
-  
-  if (!requestChange || !dataId) {
+  const { dataId, approvalStatus, personalData } = req.body;
+
+  if (!dataId || !personalData) {
     return res.status(400).send('Parámetros faltantes');
   }
 
-  const updateSql = 'UPDATE cdx_txt SET requestApproved = ? WHERE ID = ?';
+  const updateSql = 'UPDATE cdx_txt SET personalData = ?, requestChange = ?, requestApproved = ? WHERE ID = ?';
 
-  db.query(updateSql, [approvalStatus, dataId], (err, result) => {
+  const personalDataSerialized = JSON.stringify(personalData)
+
+  db.query(updateSql, [personalDataSerialized, null, approvalStatus, dataId], (err, result) => {
     if (err) {
       console.error('Error al actualizar datos: ' + err.message);
       return res.status(500).send('Error interno del servidor');
