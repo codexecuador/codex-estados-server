@@ -309,6 +309,67 @@ app.put('/api/update-company', verifyToken, (req, res) => {
   });
 });
 
+// ************* Endpoint para seleccionar todas las empresas que requieran cambio de activos ************* //
+
+// Nota: verificar el userLevel para permitir esta operación
+
+app.get('/api/get-requests', verifyToken, (req, res) => {
+
+  const sql = 'SELECT ID, personalData, requestChange FROM cdx_txt WHERE requestChange IS NOT NULL AND requestApproved IS NOT TRUE';
+
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error('Error al obtener datos: ' + err.message);
+      return res.status(500).json({ error: 'Error interno del servidor' });
+    }
+
+    res.json({ data: results });
+  });
+});
+
+// ************* Endpoint para que el usuario solicite un cambio ************* //
+
+app.put('/api/send-request', verifyToken, (req, res) => {
+  const { dataId, requestChange } = req.body;
+  const userId = req.userId;
+
+  if (!requestChange || !dataId) {
+    return res.status(400).send('Parámetros faltantes');
+  }
+
+  const updateSql = 'UPDATE cdx_txt SET requestChange = ? WHERE user_id = ?  AND ID = ?';
+
+  db.query(updateSql, [requestChange, userId, dataId], (err, result) => {
+    if (err) {
+      console.error('Error al actualizar datos: ' + err.message);
+      return res.status(500).send('Error interno del servidor');
+    }
+    res.status(200).send('Solicitud ingresada correctamente');
+  });
+});
+
+// ************* Endpoint para que un administrador acepte o rechace un cambio a un usuario ************* //
+
+app.put('/api/check-request', verifyToken, (req, res) => {
+
+  // Nota: verificar el token para revisar el userLevel antes de realizar la operación
+
+  const { dataId, requestChange, approvalStatus } = req.body;
+  
+  if (!requestChange || !dataId) {
+    return res.status(400).send('Parámetros faltantes');
+  }
+
+  const updateSql = 'UPDATE cdx_txt SET requestApproved = ? WHERE ID = ?';
+
+  db.query(updateSql, [approvalStatus, dataId], (err, result) => {
+    if (err) {
+      console.error('Error al actualizar datos: ' + err.message);
+      return res.status(500).send('Error interno del servidor');
+    }
+    res.status(200).send('Solicitud ingresada correctamente');
+  });
+});
 
 
 // ************* Puerto ************* //
