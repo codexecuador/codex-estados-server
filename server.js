@@ -151,7 +151,7 @@ const verifyToken = (req, res, next) => {
   });
 };
 
-// ************* Endpoint para la creación de nuevos datos (CREATE) ************* //
+// ************* Endpoint para la creación de nueva empresa (CREATE) ************* //
 
 app.post('/api/create', verifyToken, (req, res) => {
   const { yearCurrent, yearPrevious, personalData } = req.body;
@@ -162,39 +162,70 @@ app.post('/api/create', verifyToken, (req, res) => {
     return res.status(400).send('Parámetros faltantes');
   }
 
-  // Verificar el número de entradas existentes para el usuario
-  const checkSql = 'SELECT COUNT(*) AS count FROM cdx_txt WHERE user_id = ?';
-  db.query(checkSql, [userId], (err, results) => {
+  // Verificar si el usuario ya tiene una fila en cdx_txt_enterprises
+  const checkEnterpriseSql = 'SELECT enterprises FROM cdx_txt_enterprises WHERE user_id = ?';
+  db.query(checkEnterpriseSql, [userId], (err, results) => {
     if (err) {
-      console.error('Error al verificar el número de entradas: ' + err.message);
+      console.error('Error al verificar cdx_txt_enterprises: ' + err.message);
       return res.status(500).send('Error interno del servidor');
     }
 
-    const count = results[0].count;
-    if (count >= 3) {
-      return res.status(403).send('No se pueden crear más datos porque se alcanzó el límite.');
+    let enterpriseLimit;
+
+    if (results.length === 0) {
+      // Crear una nueva fila con valor 3 si el usuario no tiene ninguna
+      const insertEnterpriseSql = 'INSERT INTO cdx_txt_enterprises (user_id, enterprises) VALUES (?, 3)';
+      db.query(insertEnterpriseSql, [userId], (err) => {
+        if (err) {
+          console.error('Error al insertar en cdx_txt_enterprises: ' + err.message);
+          return res.status(500).send('Error interno del servidor');
+        }
+        enterpriseLimit = 3; // Valor predeterminado
+        verificarYCrearDatos(enterpriseLimit);
+      });
+    } else {
+      // Si ya tiene una fila, usar el valor existente
+      enterpriseLimit = results[0].enterprises;
+      verificarYCrearDatos(enterpriseLimit);
     }
+  });
 
-    // Serializar los nuevos datos a formato JSON
-    const personalDataSerialized = JSON.stringify(personalData);
-    const downloadsSerialized = JSON.stringify({
-      situacion: 0,
-      resultados: 0,
-      patrimonio: 0,
-      efectivo: 0
-    });
-
-    // Construir y ejecutar la consulta SQL
-    const insertSql = 'INSERT INTO cdx_txt (user_id, yearCurrent, yearPrevious, personalData, downloads) VALUES (?, ?, ?, ?, ?)';
-    db.query(insertSql, [userId, yearCurrent, yearPrevious, personalDataSerialized, downloadsSerialized], (err, result) => {
+  // Función para verificar el número de entradas y crear datos si es posible
+  function verificarYCrearDatos(enterpriseLimit) {
+    const checkSql = 'SELECT COUNT(*) AS count FROM cdx_txt WHERE user_id = ?';
+    db.query(checkSql, [userId], (err, results) => {
       if (err) {
-        console.error('Error al crear datos: ' + err.message);
+        console.error('Error al verificar el número de entradas: ' + err.message);
         return res.status(500).send('Error interno del servidor');
       }
-      res.status(201).send('Datos creados correctamente');
+
+      const count = results[0].count;
+      if (count >= enterpriseLimit) {
+        return res.status(403).send('No se pueden crear más datos porque se alcanzó el límite.');
+      }
+
+      // Serializar los datos para la inserción
+      const personalDataSerialized = JSON.stringify(personalData);
+      const downloadsSerialized = JSON.stringify({
+        situacion: 0,
+        resultados: 0,
+        patrimonio: 0,
+        efectivo: 0
+      });
+
+      // Insertar los datos en cdx_txt
+      const insertSql = 'INSERT INTO cdx_txt (user_id, yearCurrent, yearPrevious, personalData, downloads) VALUES (?, ?, ?, ?, ?)';
+      db.query(insertSql, [userId, yearCurrent, yearPrevious, personalDataSerialized, downloadsSerialized], (err) => {
+        if (err) {
+          console.error('Error al crear datos: ' + err.message);
+          return res.status(500).send('Error interno del servidor');
+        }
+        res.status(201).send('Datos creados correctamente');
+      });
     });
-  });
+  }
 });
+
 
 
 // ************* Endpoint para el retorno de la data de un usuario (READ) ************* //
@@ -244,14 +275,33 @@ app.get('/api/all-data', verifyToken, (req, res) => {
     return res.status(403).json({ valid: false, message: 'Su suscripción ha expirado.' });
   }
 
-  const sql = 'SELECT ID, yearCurrent, personalData FROM cdx_txt WHERE user_id = ?';
-  db.query(sql, [userId], (err, results) => {
+  const sqlUserData = 'SELECT ID, yearCurrent, personalData FROM cdx_txt WHERE user_id = ?';
+  const sqlEnterprise = 'SELECT enterprises FROM cdx_txt_enterprises WHERE user_id = ?';
+
+  // Consultar los datos del usuario
+  db.query(sqlUserData, [userId], (err, userData) => {
     if (err) {
-      console.error('Error al obtener datos: ' + err.message);
+      console.error('Error al obtener datos del usuario: ' + err.message);
       return res.status(500).json({ error: 'Error interno del servidor' });
     }
 
-    res.json({ userId, userName, userLevel, data: results });
+    // Consultar el valor de enterprises
+    db.query(sqlEnterprise, [userId], (err, enterpriseData) => {
+      if (err) {
+        console.error('Error al obtener enterprises: ' + err.message);
+        return res.status(500).json({ error: 'Error interno del servidor' });
+      }
+
+      const enterprises = enterpriseData[0].enterprises;
+
+      res.json({
+        userId,
+        userName,
+        userLevel,
+        enterprises,
+        data: userData
+      });
+    });
   });
 });
 
@@ -292,7 +342,7 @@ app.put('/api/update', (req, res) => {
 // ************* Endpoint para la actualización de una empresa (UPDATE) ************* //
 
 app.put('/api/update-company', verifyToken, (req, res) => {
-  const { dataId, yearCurrent, yearPrevious, personalData} = req.body;
+  const { dataId, yearCurrent, yearPrevious, personalData } = req.body;
   const userId = req.userId;
 
   if (!yearCurrent || !yearPrevious || !personalData) {
@@ -371,6 +421,60 @@ app.put('/api/check-request', verifyToken, (req, res) => {
     }
     res.status(200).send('Solicitud ingresada correctamente');
   });
+});
+
+// ************* Endpoint para confirmar pago y aumentar 3 empresas a un usuario ************* //
+
+app.post('/confirm-payment', (req, res) => {
+  const { userId, date, amount, clientTransactionId, transactionId, transactionStatus } = req.body;
+
+  // Verificar si el clientTransactionId ya existe
+  db.query(
+    'SELECT id FROM cdx_txt_payments WHERE clientTransactionId = ?',
+    [clientTransactionId],
+    (err, result) => {
+      if (err) {
+        console.error('Error al verificar clientTransactionId:', err);
+        return res.status(500).json({ error: 'Error al verificar clientTransactionId' });
+      }
+
+      if (result.length > 0) {
+        return res.status(400).json({ error: 'clientTransactionId ya existe' });
+      }
+
+      // Insertar el pago en cdx_txt_payments
+      db.query(
+        `INSERT INTO cdx_txt_payments 
+         (user_id, date, amount, clientTransactionId, transactionId, transactionStatus) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [userId, date, amount, clientTransactionId, transactionId, transactionStatus],
+        (err) => {
+          if (err) {
+            console.error('Error al insertar el pago:', err);
+            return res.status(500).json({ error: 'Error al insertar el pago' });
+          }
+
+          // Actualizar el valor de enterprises en cdx_txt_enterprises
+          db.query(
+            `UPDATE cdx_txt_enterprises 
+             SET enterprises = enterprises + 3 
+             WHERE user_id = ?`,
+            [userId],
+            (err) => {
+              if (err) {
+                console.error('Error al actualizar enterprises:', err);
+                return res.status(500).json({ error: 'Error al actualizar enterprises' });
+              }
+
+              res.status(201).json({
+                message: 'Pago registrado y enterprises actualizado correctamente',
+              });
+            }
+          );
+        }
+      );
+    }
+  );
 });
 
 
