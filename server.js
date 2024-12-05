@@ -50,6 +50,83 @@ app.get('/', (req, res) => {
   res.send('Servidor en línea');
 });
 
+// ************* Endpoint para la creación de un usuario ************* //
+
+app.post('/create-user', (req, res) => {
+  const { user_login, user_pass, user_nicename, user_email } = req.body;
+
+  if (!user_login || !user_pass || !user_nicename || !user_email) {
+    return res.status(400).send('Parámetros faltantes');
+  }
+
+  // Verificar si ya existe el usuario o el correo
+  const checkUserSql = 'SELECT ID FROM cdx_users WHERE user_login = ? OR user_email = ?';
+  db.query(checkUserSql, [user_login, user_email], (err, results) => {
+    if (err) {
+      console.error('Error al verificar usuario:', err.message);
+      return res.status(500).send('Error interno del servidor');
+    }
+
+    if (results.length > 0) {
+      return res.status(400).send('El usuario o el correo ya existen');
+    }
+
+    // Hashear la contraseña
+    const hashedPassword = hasher.HashPassword(user_pass);
+
+    // Insertar en cdx_users
+    const insertUserSql = `
+      INSERT INTO cdx_users (user_login, user_pass, user_nicename, user_email, user_registered, user_status, display_name)
+      VALUES (?, ?, ?, ?, NOW(), 0, ?)`;
+    db.query(insertUserSql, [user_login, hashedPassword, user_nicename, user_email, user_nicename], (err, result) => {
+      if (err) {
+        console.error('Error al insertar usuario:', err.message);
+        return res.status(500).send('Error interno del servidor');
+      }
+
+      const newUserId = result.insertId;
+
+      // Insertar en cdx_txt_enterprises
+      const insertEnterpriseSql = 'INSERT INTO cdx_txt_enterprises (user_id, enterprises) VALUES (?, 0)';
+      db.query(insertEnterpriseSql, [newUserId], (err) => {
+        if (err) {
+          console.error('Error al insertar en cdx_txt_enterprises: ' + err.message);
+          return res.status(500).send('Error interno del servidor');
+        }
+      });
+
+      // Insertar en cdx_usermeta
+      const usermetaValues = [
+        [newUserId, 'cdx_capabilities', 'a:1:{s:10:"subscriber";b:1;}'],
+        [newUserId, 'cdx_user_level', '0']
+      ];
+      const insertUsermetaSql = 'INSERT INTO cdx_usermeta (user_id, meta_key, meta_value) VALUES ?';
+      db.query(insertUsermetaSql, [usermetaValues], (err) => {
+        if (err) {
+          console.error('Error al insertar usermeta:', err.message);
+          return res.status(500).send('Error interno del servidor');
+        }
+
+        // Insertar en cdx_pms_member_subscriptions
+        const expirationDate = new Date();
+        expirationDate.setFullYear(expirationDate.getFullYear() + 1);
+
+        const insertSubscriptionSql = `
+          INSERT INTO cdx_pms_member_subscriptions (user_id, subscription_plan_id, start_date, expiration_date, status)
+          VALUES (?, 18568, NOW(), ?, 'active')`;
+        db.query(insertSubscriptionSql, [newUserId, expirationDate.toISOString().slice(0, 10)], (err) => {
+          if (err) {
+            console.error('Error al insertar suscripción:', err.message);
+            return res.status(500).send('Error interno del servidor');
+          }
+
+          res.status(201).send('Usuario creado exitosamente');
+        });
+      });
+    });
+  });
+});
+
 // ************* Endpoint para el inicio de sesión************* //
 
 app.post('/login', (req, res) => {
@@ -64,14 +141,9 @@ app.post('/login', (req, res) => {
       res.status(401).send('Usuario no encontrado');
     } else { // Caso en el que sí se encuentra un usuario con ese nombre
       const user = results[0];
-      let isPasswordCorrect;
 
       // Chequeo de la contraseña
-      if (process.env.NODE_ENV === 'development') {
-        isPasswordCorrect = (password === user.user_pass);
-      } else {
-        isPasswordCorrect = hasher.CheckPassword(password, user.user_pass);
-      }
+      const isPasswordCorrect = hasher.CheckPassword(password, user.user_pass);
 
       if (isPasswordCorrect) {
         // Contraseña correcta, realizar la consulta adicional a cdx_usermeta para obtener el nivel de usuario
@@ -162,7 +234,7 @@ app.post('/api/create', verifyToken, (req, res) => {
     return res.status(400).send('Parámetros faltantes');
   }
 
-  // Verificar si el usuario ya tiene una fila en cdx_txt_enterprises
+  // Crear los datos verificando el número de empresas que tiene permitido crear el usuario
   const checkEnterpriseSql = 'SELECT enterprises FROM cdx_txt_enterprises WHERE user_id = ?';
   db.query(checkEnterpriseSql, [userId], (err, results) => {
     if (err) {
@@ -170,24 +242,8 @@ app.post('/api/create', verifyToken, (req, res) => {
       return res.status(500).send('Error interno del servidor');
     }
 
-    let enterpriseLimit;
-
-    if (results.length === 0) {
-      // Crear una nueva fila con valor 3 si el usuario no tiene ninguna
-      const insertEnterpriseSql = 'INSERT INTO cdx_txt_enterprises (user_id, enterprises) VALUES (?, 3)';
-      db.query(insertEnterpriseSql, [userId], (err) => {
-        if (err) {
-          console.error('Error al insertar en cdx_txt_enterprises: ' + err.message);
-          return res.status(500).send('Error interno del servidor');
-        }
-        enterpriseLimit = 3; // Valor predeterminado
-        verificarYCrearDatos(enterpriseLimit);
-      });
-    } else {
-      // Si ya tiene una fila, usar el valor existente
-      enterpriseLimit = results[0].enterprises;
-      verificarYCrearDatos(enterpriseLimit);
-    }
+    const enterpriseLimit = results[0].enterprises;
+    verificarYCrearDatos(enterpriseLimit);
   });
 
   // Función para verificar el número de entradas y crear datos si es posible
@@ -225,7 +281,6 @@ app.post('/api/create', verifyToken, (req, res) => {
     });
   }
 });
-
 
 
 // ************* Endpoint para el retorno de la data de un usuario (READ) ************* //
@@ -457,7 +512,7 @@ app.post('/confirm-payment', (req, res) => {
           // Actualizar el valor de enterprises en cdx_txt_enterprises
           db.query(
             `UPDATE cdx_txt_enterprises 
-             SET enterprises = enterprises + 3 
+             SET enterprises = enterprises + 1 
              WHERE user_id = ?`,
             [userId],
             (err) => {
