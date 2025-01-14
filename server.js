@@ -153,47 +153,14 @@ app.post('/login', (req, res) => {
           } else {
             const userLevel = metaResults.length > 0 ? metaResults[0].meta_value : null;
 
-            // Verificar la suscripción del usuario en cdx_pms_member_subscriptions
-            db.query('SELECT * FROM cdx_pms_member_subscriptions WHERE user_id = ?', [user.ID], async (error, subscriptionResults) => {
-              if (error) {
-                res.status(500).send('Error en el servidor');
-              } else {
-                const validPlans = [3865, 601, 18568]; // IDs de planes de suscripción válidos para usar la plataforma
-                let hasValidSubscription = false;
-                let expirationDate = null;
+            // Generación del token JWT
+            const token = jwt.sign({
+              userId: user.ID,
+              userName: user.display_name,
+              userLevel: userLevel
+            }, 'secreto_del_token');
 
-                // Verificación de que la suscripción actual del usuario no esté expirada
-                for (const subscription of subscriptionResults) {
-                  if (validPlans.includes(subscription.subscription_plan_id) && subscription.status === 'active') {
-                    hasValidSubscription = true;
-                    // Almacenamiento de la fecha de expiración de la suscripción
-                    expirationDate = subscription.expiration_date;
-                    break;
-                  }
-                }
-
-                // Caso en el que el usuario no cumple con los requisitos para usar la plataforma
-                if (!hasValidSubscription) {
-                  if (subscriptionResults.length === 0 || !validPlans.includes(subscriptionResults[0].subscription_plan_id)) {
-                    res.status(403).send('Su suscripción actual de Codex no le da acceso a la plataforma.');
-                  } else if (subscriptionResults[0].status !== 'active') {
-                    res.status(403).send('Su suscripción ha expirado.');
-                  } else {
-                    res.status(403).send('No tiene una suscripción registrada en Codex.');
-                  }
-                } else {
-                  // Generación del token JWT
-                  const token = jwt.sign({
-                    userId: user.ID,
-                    userName: user.display_name,
-                    userLevel: userLevel,
-                    expirationDate: expirationDate
-                  }, 'secreto_del_token');
-
-                  res.json({ token });
-                }
-              }
-            });
+            res.json({ token });
           }
         });
       } else {
@@ -323,15 +290,11 @@ app.get('/api/all-data', verifyToken, (req, res) => {
   const userName = req.userName;
   const userLevel = req.userLevel;
 
-  const expirationDate = new Date(req.expirationDate);
-  const currentDate = new Date();
-
-  if (expirationDate < currentDate) {
-    return res.status(403).json({ valid: false, message: 'Su suscripción ha expirado.' });
-  }
+  let extraEnterprises = 0;
 
   const sqlUserData = 'SELECT ID, yearCurrent, personalData FROM cdx_txt WHERE user_id = ?';
   const sqlEnterprise = 'SELECT enterprises FROM cdx_txt_enterprises WHERE user_id = ?';
+  const sqlSuscription = 'SELECT * FROM cdx_pms_member_subscriptions WHERE user_id = ?';
 
   // Consultar los datos del usuario
   db.query(sqlUserData, [userId], (err, userData) => {
@@ -340,6 +303,33 @@ app.get('/api/all-data', verifyToken, (req, res) => {
       return res.status(500).json({ error: 'Error interno del servidor' });
     }
 
+       // Verificar la suscripción del usuario en cdx_pms_member_subscriptions
+       db.query(sqlSuscription, [userId], async (error, subscriptionResults) => {
+        if (error) {
+          res.status(500).send('Error al obtener datos de suscripción');
+        } else {
+          // 3685 personas naturales anual
+          // 601 sociedades anual
+          // 18568 supertxt
+          // 4737 plan mensual
+
+          const currentPlan = subscriptionResults[0].subscription_plan_id || 0;
+
+          switch (currentPlan) {
+            case 3865:
+              extraEnterprises = 3;
+              break;
+            case 601:
+              extraEnterprises = 3;
+              break;
+            case 4737:
+              extraEnterprises = 1;
+              break;
+          }
+        }
+
+      });
+
     // Consultar el valor de enterprises
     db.query(sqlEnterprise, [userId], (err, enterpriseData) => {
       if (err) {
@@ -347,7 +337,8 @@ app.get('/api/all-data', verifyToken, (req, res) => {
         return res.status(500).json({ error: 'Error interno del servidor' });
       }
 
-      const enterprises = enterpriseData[0].enterprises;
+
+      const enterprises = enterpriseData[0].enterprises + extraEnterprises;
 
       res.json({
         userId,
@@ -357,6 +348,7 @@ app.get('/api/all-data', verifyToken, (req, res) => {
         data: userData
       });
     });
+
   });
 });
 
