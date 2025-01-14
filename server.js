@@ -328,7 +328,7 @@ app.get('/api/all-data', verifyToken, (req, res) => {
             break;
         }
 
-        if (planStatus === 'inactive') {
+        if (planStatus !== 'active') {
           extraEnterprises = 0;
         }
       }
