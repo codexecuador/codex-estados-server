@@ -303,32 +303,37 @@ app.get('/api/all-data', verifyToken, (req, res) => {
       return res.status(500).json({ error: 'Error interno del servidor' });
     }
 
-       // Verificar la suscripción del usuario en cdx_pms_member_subscriptions
-       db.query(sqlSuscription, [userId], async (error, subscriptionResults) => {
-        if (error) {
-          res.status(500).send('Error al obtener datos de suscripción');
-        } else {
-          // 3685 personas naturales anual
-          // 601 sociedades anual
-          // 18568 supertxt
-          // 4737 plan mensual
+    // Verificar la suscripción del usuario en cdx_pms_member_subscriptions
+    db.query(sqlSuscription, [userId], async (error, subscriptionResults) => {
+      if (error) {
+        res.status(500).send('Error al obtener datos de suscripción');
+      } else {
+        // 3685 personas naturales anual
+        // 601 sociedades anual
+        // 18568 supertxt
+        // 4737 plan mensual
 
-          const currentPlan = subscriptionResults[0].subscription_plan_id || 0;
+        const currentPlan = subscriptionResults[0].subscription_plan_id || 0;
+        const planStatus = subscriptionResults[0].status || 'inactive';
 
-          switch (currentPlan) {
-            case 3865:
-              extraEnterprises = 3;
-              break;
-            case 601:
-              extraEnterprises = 3;
-              break;
-            case 4737:
-              extraEnterprises = 1;
-              break;
-          }
+        switch (currentPlan) {
+          case 3865:
+            extraEnterprises = 3;
+            break;
+          case 601:
+            extraEnterprises = 3;
+            break;
+          case 4737:
+            extraEnterprises = 1;
+            break;
         }
 
-      });
+        if (planStatus === 'inactive') {
+          extraEnterprises = 0;
+        }
+      }
+
+    });
 
     // Consultar el valor de enterprises
     db.query(sqlEnterprise, [userId], (err, enterpriseData) => {
