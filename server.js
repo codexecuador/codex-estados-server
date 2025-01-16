@@ -294,6 +294,7 @@ app.get('/api/all-data', verifyToken, (req, res) => {
 
   const sqlUserData = 'SELECT ID, yearCurrent, personalData FROM cdx_txt WHERE user_id = ?';
   const sqlEnterprise = 'SELECT enterprises FROM cdx_txt_enterprises WHERE user_id = ?';
+  const sqlInsertEnterprise = 'INSERT INTO cdx_txt_enterprises (user_id, enterprises) VALUES (?, ?)';
   const sqlSuscription = 'SELECT * FROM cdx_pms_member_subscriptions WHERE user_id = ?';
 
   // Consultar los datos del usuario
@@ -306,56 +307,71 @@ app.get('/api/all-data', verifyToken, (req, res) => {
     // Verificar la suscripción del usuario en cdx_pms_member_subscriptions
     db.query(sqlSuscription, [userId], async (error, subscriptionResults) => {
       if (error) {
-        res.status(500).send('Error al obtener datos de suscripción');
-      } else {
-        // 3685 personas naturales anual
-        // 601 sociedades anual
-        // 18568 supertxt
-        // 4737 plan mensual
-
-        const currentPlan = subscriptionResults[0].subscription_plan_id || 0;
-        const planStatus = subscriptionResults[0].status || 'inactive';
-
-        switch (currentPlan) {
-          case 3865:
-            extraEnterprises = 3;
-            break;
-          case 601:
-            extraEnterprises = 3;
-            break;
-          case 4737:
-            extraEnterprises = 1;
-            break;
-        }
-
-        if (planStatus !== 'active') {
-          extraEnterprises = 0;
-        }
+        console.error('Error al obtener datos de suscripción: ' + error.message);
+        return res.status(500).send('Error al obtener datos de suscripción');
       }
 
+      const currentPlan = subscriptionResults[0]?.subscription_plan_id || 0;
+      const planStatus = subscriptionResults[0]?.status || 'inactive';
+
+      switch (currentPlan) {
+        case 3865:
+          extraEnterprises = 3;
+          break;
+        case 601:
+          extraEnterprises = 3;
+          break;
+        case 4737:
+          extraEnterprises = 1;
+          break;
+      }
+
+      if (planStatus !== 'active') {
+        extraEnterprises = 0;
+      }
     });
 
-    // Consultar el valor de enterprises
+    // Verificar y crear el registro en cdx_txt_enterprises si no existe
     db.query(sqlEnterprise, [userId], (err, enterpriseData) => {
       if (err) {
-        console.error('Error al obtener enterprises: ' + err.message);
+        console.error('Error al verificar enterprises: ' + err.message);
         return res.status(500).json({ error: 'Error interno del servidor' });
       }
 
-
-      const enterprises = enterpriseData[0].enterprises + extraEnterprises;
-
-      res.json({
-        userId,
-        userName,
-        userLevel,
-        enterprises,
-        data: userData
-      });
+      if (enterpriseData.length === 0) {
+        // Crear registro en cdx_txt_enterprises si no existe
+        db.query(sqlInsertEnterprise, [userId, 0], (insertErr) => {
+          if (insertErr) {
+            console.error('Error al insertar enterprises: ' + insertErr.message);
+            return res.status(500).json({ error: 'Error interno del servidor' });
+          }
+          // Una vez insertado, obtener los datos nuevamente
+          db.query(sqlEnterprise, [userId], (fetchErr, newEnterpriseData) => {
+            if (fetchErr) {
+              console.error('Error al obtener enterprises: ' + fetchErr.message);
+              return res.status(500).json({ error: 'Error interno del servidor' });
+            }
+            const enterprises = newEnterpriseData[0].enterprises + extraEnterprises;
+            sendResponse(userId, userName, userLevel, enterprises, userData, res);
+          });
+        });
+      } else {
+        const enterprises = enterpriseData[0].enterprises + extraEnterprises;
+        sendResponse(userId, userName, userLevel, enterprises, userData, res);
+      }
     });
-
   });
 });
+
+function sendResponse(userId, userName, userLevel, enterprises, userData, res) {
+  res.json({
+    userId,
+    userName,
+    userLevel,
+    enterprises,
+    data: userData,
+  });
+}
 
 
 // ************* Endpoint para la actualización (UPDATE) ************* //
