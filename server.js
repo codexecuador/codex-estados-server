@@ -299,8 +299,6 @@ app.get('/api/all-users', verifyToken, (req, res) => {
   const offset = (page - 1) * limit;
   const searchPattern = `%${search ? search.trim() : ''}%`;
 
-  console.log('Page:', page, 'Limit:', limit, 'Search:', search);
-
   // Consulta para obtener usuarios con la paginación y búsqueda aplicadas
   const userInfoQuery = `
     SELECT 
@@ -346,6 +344,108 @@ app.get('/api/all-users', verifyToken, (req, res) => {
   });
 });
 
+// ************* Endpoint para obtener la información general de un usuario, con fines administrativos  ************* //
+
+app.get('/api/user-data/:id', verifyToken, (req, res) => {
+  const userId = req.params.id;
+
+  const userQuery = `
+    SELECT 
+      ID AS id, 
+      user_login, 
+      user_email, 
+      display_name, 
+      user_registered 
+    FROM cdx_users 
+    WHERE ID = ?
+  `;
+
+  const personalDataQuery = `
+    SELECT
+      personalData
+    FROM cdx_txt 
+    WHERE user_id = ?
+  `;
+
+  const paymentsQuery = `
+    SELECT * 
+    FROM cdx_txt_payments 
+    WHERE user_id = ?
+  `;
+
+  const enterpriseQuery = `
+    SELECT * 
+    FROM cdx_txt_enterprises 
+    WHERE user_id = ?
+  `;
+
+  const subscriptionQuery = `
+    SELECT 
+      subscription_plan_id, 
+      status 
+    FROM cdx_pms_member_subscriptions 
+    WHERE user_id = ?
+  `;
+
+  db.query(userQuery, [userId], (err, userResult) => {
+    if (err) {
+      console.error('Error al obtener usuario:', err);
+      return res.status(500).json({ error: 'Error interno al obtener usuario' });
+    }
+
+    if (userResult.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const user = userResult[0];
+
+    db.query(personalDataQuery, [userId], (err, personalDataResult) => {
+      if (err) {
+        console.error('Error al obtener datos personales:', err);
+        return res.status(500).json({ error: 'Error interno al obtener datos personales' });
+      }
+
+      const personalData = personalDataResult;
+
+      db.query(paymentsQuery, [userId], (err, paymentsResult) => {
+        if (err) {
+          console.error('Error al obtener pagos:', err);
+          return res.status(500).json({ error: 'Error interno al obtener pagos' });
+        }
+
+        db.query(enterpriseQuery, [userId], (err, enterpriseResult) => {
+          if (err) {
+            console.error('Error al obtener empresa:', err);
+            return res.status(500).json({ error: 'Error interno al obtener empresa' });
+          }
+
+          const enterprise = (enterpriseResult && enterpriseResult[0]?.enterprises) || 0;
+
+          db.query(subscriptionQuery, [userId], (err, subscriptionResult) => {
+            if (err) {
+              console.error('Error al obtener suscripción:', err);
+              return res.status(500).json({ error: 'Error interno al obtener suscripción' });
+            }
+
+            const subscription = subscriptionResult.map(({ subscription_plan_id, status }) => ({
+              subscription_plan_id,
+              status
+            }));
+
+            res.status(200).json({
+              user,
+              personalData,
+              payments: paymentsResult,
+              enterprise,
+              subscription
+            });
+          });
+        });
+      });
+    });
+  });
+});
+
 
 // ************* Endpoint para obtener todos los resultados de un usuario ************* //
 
@@ -376,7 +476,7 @@ app.get('/api/all-data', verifyToken, (req, res) => {
       }
 
       const currentPlan = subscriptionResults[0]?.subscription_plan_id || 0;
-      const planStatus = subscriptionResults[0]?.status || 'inactive';
+      const planStatus = subscriptionResults[0]?.status || 'inactive'; // 18568 Plan Super TXT
 
       switch (currentPlan) {
         case 3865:
@@ -437,6 +537,34 @@ function sendResponse(userId, userName, userLevel, enterprises, userData, res) {
   });
 }
 
+// ************* Endpoint para actualizar el número de empresas de un usuario ************* //
+
+app.put('/api/update-enterprises', verifyToken, (req, res) => {
+  const { userId, enterprises } = req.body;
+
+  if (!userId || enterprises === undefined) {
+    return res.status(400).json({ error: 'Faltan parámetros requeridos' });
+  }
+
+  const updateQuery = `
+    UPDATE cdx_txt_enterprises 
+    SET enterprises = ? 
+    WHERE user_id = ?
+  `;
+
+  db.query(updateQuery, [enterprises, userId], (err, result) => {
+    if (err) {
+      console.error('Error al actualizar empresas:', err);
+      return res.status(500).json({ error: 'Error interno al actualizar empresas' });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado en cdx_txt_enterprises' });
+    }
+
+    res.status(200).json({ success: true, message: 'Número de empresas actualizado correctamente' });
+  });
+});
 
 // ************* Endpoint para la actualización (UPDATE) ************* //
 
