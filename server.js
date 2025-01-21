@@ -283,7 +283,7 @@ app.get('/api/data', verifyToken, (req, res) => {
   });
 });
 
-// ************* Endpoint para obtener la información de todos los usuarios que usen Super TXT ************* //
+// ************* Endpoint para obtener la información de todos los usuarios ************* //
 
 app.get('/api/all-users', verifyToken, (req, res) => {
   let { page, limit, search } = req.query;
@@ -301,56 +301,45 @@ app.get('/api/all-users', verifyToken, (req, res) => {
 
   console.log('Page:', page, 'Limit:', limit, 'Search:', search);
 
-  // Obtener IDs únicos de usuarios con filtro de búsqueda
-  const getUsersQuery = `
-    SELECT DISTINCT user_id 
-    FROM cdx_txt
-    WHERE user_id IN (
-      SELECT ID FROM cdx_users WHERE user_login LIKE ?
-    )
+  // Consulta para obtener usuarios con la paginación y búsqueda aplicadas
+  const userInfoQuery = `
+    SELECT 
+      cdx_users.ID, 
+      cdx_users.user_login, 
+      cdx_users.display_name, 
+      cdx_users.user_email,
+      IFNULL(cdx_txt_enterprises.enterprises, 0) AS enterprises
+    FROM cdx_users
+    LEFT JOIN cdx_txt_enterprises ON cdx_users.ID = cdx_txt_enterprises.user_id
+    WHERE cdx_users.user_login LIKE ?
     LIMIT ? OFFSET ?
   `;
 
-  db.query(getUsersQuery, [searchPattern, limit, offset], (err, usersResult) => {
+  db.query(userInfoQuery, [searchPattern, limit, offset], (err, userInfoResult) => {
     if (err) {
-      console.error('Error al obtener usuarios:', err);
-      return res.status(500).json({ error: 'Error interno al obtener los usuarios' });
+      console.error('Error al obtener información del usuario:', err);
+      return res.status(500).json({ error: 'Error interno al obtener información del usuario' });
     }
 
-    if (usersResult.length === 0) {
-      return res.status(200).json({
-        page,
-        limit,
-        total: 0,
-        users: [],
-      });
-    }
-
-    const userIds = usersResult.map(user => user.user_id);
-
-    // Obtener información de los usuarios
-    const userInfoQuery = `
-      SELECT 
-        cdx_users.ID, 
-        cdx_users.user_login, 
-        cdx_users.display_name, 
-        cdx_users.user_email,
-        cdx_txt_enterprises.enterprises
+    // Obtener total de usuarios que coinciden con el filtro de búsqueda
+    const totalQuery = `
+      SELECT COUNT(*) AS total
       FROM cdx_users
-      LEFT JOIN cdx_txt_enterprises ON cdx_users.ID = cdx_txt_enterprises.user_id
-      WHERE cdx_users.ID IN (?)
+      WHERE user_login LIKE ?
     `;
 
-    db.query(userInfoQuery, [userIds], (err, userInfoResult) => {
+    db.query(totalQuery, [searchPattern], (err, totalResult) => {
       if (err) {
-        console.error('Error al obtener información del usuario:', err);
-        return res.status(500).json({ error: 'Error interno al obtener información del usuario' });
+        console.error('Error al contar usuarios:', err);
+        return res.status(500).json({ error: 'Error interno al contar usuarios' });
       }
+
+      const total = totalResult[0].total;
 
       res.status(200).json({
         page,
         limit,
-        total: userInfoResult.length,
+        total,
         users: userInfoResult,
       });
     });
