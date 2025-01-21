@@ -546,25 +546,51 @@ app.put('/api/update-enterprises', verifyToken, (req, res) => {
     return res.status(400).json({ error: 'Faltan parámetros requeridos' });
   }
 
+  const checkQuery = `
+    SELECT * 
+    FROM cdx_txt_enterprises 
+    WHERE user_id = ?
+  `;
+
+  const insertQuery = `
+    INSERT INTO cdx_txt_enterprises (user_id, enterprises) 
+    VALUES (?, ?)
+  `;
+
   const updateQuery = `
     UPDATE cdx_txt_enterprises 
     SET enterprises = ? 
     WHERE user_id = ?
   `;
 
-  db.query(updateQuery, [enterprises, userId], (err, result) => {
+  db.query(checkQuery, [userId], (err, result) => {
     if (err) {
-      console.error('Error al actualizar empresas:', err);
-      return res.status(500).json({ error: 'Error interno al actualizar empresas' });
+      console.error('Error al verificar la existencia del usuario en cdx_txt_enterprises:', err);
+      return res.status(500).json({ error: 'Error interno al verificar el usuario' });
     }
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Usuario no encontrado en cdx_txt_enterprises' });
-    }
+    if (result.length === 0) {
+      db.query(insertQuery, [userId, enterprises], (insertErr, insertResult) => {
+        if (insertErr) {
+          console.error('Error al insertar nuevo registro en cdx_txt_enterprises:', insertErr);
+          return res.status(500).json({ error: 'Error interno al insertar registro' });
+        }
 
-    res.status(200).json({ success: true, message: 'Número de empresas actualizado correctamente' });
+        return res.status(201).json({ success: true, message: 'Registro creado y número de empresas actualizado correctamente' });
+      });
+    } else {
+      db.query(updateQuery, [enterprises, userId], (updateErr, updateResult) => {
+        if (updateErr) {
+          console.error('Error al actualizar empresas:', updateErr);
+          return res.status(500).json({ error: 'Error interno al actualizar empresas' });
+        }
+
+        return res.status(200).json({ success: true, message: 'Número de empresas actualizado correctamente' });
+      });
+    }
   });
 });
+
 
 // ************* Endpoint para la actualización (UPDATE) ************* //
 
@@ -683,7 +709,7 @@ app.put('/api/check-request', verifyToken, (req, res) => {
   });
 });
 
-// ************* Endpoint para confirmar pago y aumentar 3 empresas a un usuario ************* //
+// ************* Endpoint para confirmar pago y aumentar empresas a un usuario ************* //
 
 app.post('/confirm-payment', (req, res) => {
   const { userId, date, amount, clientTransactionId, transactionId, transactionStatus } = req.body;
