@@ -283,6 +283,81 @@ app.get('/api/data', verifyToken, (req, res) => {
   });
 });
 
+// ************* Endpoint para obtener la información de todos los usuarios que usen Super TXT ************* //
+
+app.get('/api/all-users', verifyToken, (req, res) => {
+  let { page, limit, search } = req.query;
+
+  // Validar y convertir parámetros
+  page = parseInt(page, 10);
+  limit = parseInt(limit, 10);
+
+  if (isNaN(page) || isNaN(limit) || page <= 0 || limit <= 0) {
+    return res.status(400).json({ error: 'Parámetros de paginación inválidos' });
+  }
+
+  const offset = (page - 1) * limit;
+  const searchPattern = `%${search ? search.trim() : ''}%`;
+
+  console.log('Page:', page, 'Limit:', limit, 'Search:', search);
+
+  // Obtener IDs únicos de usuarios con filtro de búsqueda
+  const getUsersQuery = `
+    SELECT DISTINCT user_id 
+    FROM cdx_txt
+    WHERE user_id IN (
+      SELECT ID FROM cdx_users WHERE user_login LIKE ?
+    )
+    LIMIT ? OFFSET ?
+  `;
+
+  db.query(getUsersQuery, [searchPattern, limit, offset], (err, usersResult) => {
+    if (err) {
+      console.error('Error al obtener usuarios:', err);
+      return res.status(500).json({ error: 'Error interno al obtener los usuarios' });
+    }
+
+    if (usersResult.length === 0) {
+      return res.status(200).json({
+        page,
+        limit,
+        total: 0,
+        users: [],
+      });
+    }
+
+    const userIds = usersResult.map(user => user.user_id);
+
+    // Obtener información de los usuarios
+    const userInfoQuery = `
+      SELECT 
+        cdx_users.ID, 
+        cdx_users.user_login, 
+        cdx_users.display_name, 
+        cdx_users.user_email,
+        cdx_txt_enterprises.enterprises
+      FROM cdx_users
+      LEFT JOIN cdx_txt_enterprises ON cdx_users.ID = cdx_txt_enterprises.user_id
+      WHERE cdx_users.ID IN (?)
+    `;
+
+    db.query(userInfoQuery, [userIds], (err, userInfoResult) => {
+      if (err) {
+        console.error('Error al obtener información del usuario:', err);
+        return res.status(500).json({ error: 'Error interno al obtener información del usuario' });
+      }
+
+      res.status(200).json({
+        page,
+        limit,
+        total: userInfoResult.length,
+        users: userInfoResult,
+      });
+    });
+  });
+});
+
+
 // ************* Endpoint para obtener todos los resultados de un usuario ************* //
 
 app.get('/api/all-data', verifyToken, (req, res) => {
