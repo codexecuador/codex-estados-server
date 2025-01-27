@@ -201,7 +201,7 @@ app.post('/api/create', verifyToken, (req, res) => {
     return res.status(400).send('Parámetros faltantes');
   }
 
-  // Crear los datos verificando el número de empresas que tiene permitido crear el usuario
+  // Consulta para obtener el límite base de empresas que puede crear el usuario
   const checkEnterpriseSql = 'SELECT enterprises FROM cdx_txt_enterprises WHERE user_id = ?';
   db.query(checkEnterpriseSql, [userId], (err, results) => {
     if (err) {
@@ -210,7 +210,41 @@ app.post('/api/create', verifyToken, (req, res) => {
     }
 
     const enterpriseLimit = results[0].enterprises;
-    verificarYCrearDatos(enterpriseLimit);
+
+    // Consulta para obtener el plan de suscripción del usuario
+    const checkSubscriptionSql = 'SELECT * FROM cdx_pms_member_subscriptions WHERE user_id = ?';
+    db.query(checkSubscriptionSql, [userId], (err, subscriptionResults) => {
+      if (err) {
+        console.error('Error al verificar cdx_pms_member_subscriptions: ' + err.message);
+        return res.status(500).send('Error interno del servidor');
+      }
+
+      // Determinar la cantidad de empresas adicionales según el plan de suscripción
+      let extraEnterprises = 0;
+      const currentPlan = subscriptionResults[0]?.subscription_plan_id || 0;
+      const planStatus = subscriptionResults[0]?.status || 'inactive';
+
+      switch (currentPlan) {
+        case 3865:
+        case 601:
+          extraEnterprises = 3;
+          break;
+        case 4737:
+          extraEnterprises = 1;
+          break;
+      }
+
+      // Si el plan no está activo, no se otorgan empresas adicionales
+      if (planStatus !== 'active') {
+        extraEnterprises = 0;
+      }
+
+      // Sumar las empresas adicionales al límite base
+      const totalEnterpriseLimit = enterpriseLimit + extraEnterprises;
+      
+      // Llamar a la función para verificar y crear los datos
+      verificarYCrearDatos(totalEnterpriseLimit);
+    });
   });
 
   // Función para verificar el número de entradas y crear datos si es posible
@@ -227,7 +261,7 @@ app.post('/api/create', verifyToken, (req, res) => {
         return res.status(403).send('No se pueden crear más datos porque se alcanzó el límite.');
       }
 
-      // Serializar los datos para la inserción
+      // Serializar los datos para la inserción en la base de datos
       const personalDataSerialized = JSON.stringify(personalData);
       const downloadsSerialized = JSON.stringify({
         situacion: 0,
@@ -236,7 +270,7 @@ app.post('/api/create', verifyToken, (req, res) => {
         efectivo: 0
       });
 
-      // Insertar los datos en cdx_txt
+      // Insertar los datos en la tabla cdx_txt
       const insertSql = 'INSERT INTO cdx_txt (user_id, yearCurrent, yearPrevious, personalData, downloads) VALUES (?, ?, ?, ?, ?)';
       db.query(insertSql, [userId, yearCurrent, yearPrevious, personalDataSerialized, downloadsSerialized], (err) => {
         if (err) {
