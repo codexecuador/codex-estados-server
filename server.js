@@ -241,7 +241,7 @@ app.post('/api/create', verifyToken, (req, res) => {
 
       // Sumar las empresas adicionales al límite base
       const totalEnterpriseLimit = enterpriseLimit + extraEnterprises;
-      
+
       // Llamar a la función para verificar y crear los datos
       verificarYCrearDatos(totalEnterpriseLimit);
     });
@@ -322,7 +322,6 @@ app.get('/api/data', verifyToken, (req, res) => {
 app.get('/api/all-users', verifyToken, (req, res) => {
   let { page, limit, search } = req.query;
 
-  // Validar y convertir parámetros
   page = parseInt(page, 10);
   limit = parseInt(limit, 10);
 
@@ -331,9 +330,9 @@ app.get('/api/all-users', verifyToken, (req, res) => {
   }
 
   const offset = (page - 1) * limit;
+  const isEmailSearch = search && /\S+@\S+\.\S+/.test(search); // Detecta si es un correo electrónico
   const searchPattern = `%${search ? search.trim() : ''}%`;
 
-  // Consulta para obtener usuarios con la paginación y búsqueda aplicadas
   const userInfoQuery = `
     SELECT 
       cdx_users.ID, 
@@ -343,7 +342,7 @@ app.get('/api/all-users', verifyToken, (req, res) => {
       IFNULL(cdx_txt_enterprises.enterprises, 0) AS enterprises
     FROM cdx_users
     LEFT JOIN cdx_txt_enterprises ON cdx_users.ID = cdx_txt_enterprises.user_id
-    WHERE cdx_users.user_login LIKE ?
+    WHERE ${isEmailSearch ? 'cdx_users.user_email' : 'cdx_users.user_login'} LIKE ?
     LIMIT ? OFFSET ?
   `;
 
@@ -353,11 +352,10 @@ app.get('/api/all-users', verifyToken, (req, res) => {
       return res.status(500).json({ error: 'Error interno al obtener información del usuario' });
     }
 
-    // Obtener total de usuarios que coinciden con el filtro de búsqueda
     const totalQuery = `
       SELECT COUNT(*) AS total
       FROM cdx_users
-      WHERE user_login LIKE ?
+      WHERE ${isEmailSearch ? 'user_email' : 'user_login'} LIKE ?
     `;
 
     db.query(totalQuery, [searchPattern], (err, totalResult) => {
@@ -366,12 +364,10 @@ app.get('/api/all-users', verifyToken, (req, res) => {
         return res.status(500).json({ error: 'Error interno al contar usuarios' });
       }
 
-      const total = totalResult[0].total;
-
       res.status(200).json({
         page,
         limit,
-        total,
+        total: totalResult[0].total,
         users: userInfoResult,
       });
     });
@@ -395,11 +391,13 @@ app.get('/api/user-data/:id', verifyToken, (req, res) => {
   `;
 
   const personalDataQuery = `
-    SELECT
-      personalData
-    FROM cdx_txt 
-    WHERE user_id = ?
-  `;
+  SELECT 
+    ID, 
+    personalData 
+  FROM cdx_txt 
+  WHERE user_id = ?
+`;
+
 
   const paymentsQuery = `
     SELECT * 
@@ -570,6 +568,31 @@ function sendResponse(userId, userName, userLevel, enterprises, userData, res) {
     data: userData,
   });
 }
+
+// ************* Endpoint para eliminar una empresa de un usuario ************* //
+
+app.delete('/api/delete/:userId/:enterpriseId', verifyToken, (req, res) => {
+  const { userId, enterpriseId } = req.params;
+
+  const deleteQuery = `
+    DELETE FROM cdx_txt 
+    WHERE user_id = ? AND ID = ?
+  `;
+
+  db.query(deleteQuery, [userId, enterpriseId], (err, result) => {
+    if (err) {
+      console.error('Error al eliminar la fila:', err);
+      return res.status(500).json({ error: 'Error interno al eliminar la fila' });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Fila no encontrada o ya eliminada' });
+    }
+
+    res.status(200).json({ message: 'Fila eliminada correctamente' });
+  });
+});
+
 
 // ************* Endpoint para actualizar el número de empresas de un usuario ************* //
 
