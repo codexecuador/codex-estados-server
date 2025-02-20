@@ -185,7 +185,7 @@ app.post("/login", (req, res) => {
                     userName: user.display_name,
                     userLevel: userLevel,
                   },
-                  "secreto_del_token"
+                  "CDX_2Q@UX]7n\i&4"
                 );
 
                 res.json({ token });
@@ -209,7 +209,7 @@ const verifyToken = (req, res, next) => {
   if (!token)
     return res.status(401).json({ message: "No hay token proporcionado" });
 
-  jwt.verify(token.split(" ")[1], "secreto_del_token", (err, decoded) => {
+  jwt.verify(token.split(" ")[1], "CDX_2Q@UX]7n\i&4", (err, decoded) => {
     if (err) {
       return res.status(403).json({ message: "Token inválido" });
     }
