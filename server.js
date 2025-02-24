@@ -437,6 +437,69 @@ app.get("/api/all-users", verifyToken, (req, res) => {
   );
 });
 
+// ************* Endpoint para obtener todos los pagos  ************* //
+
+app.get("/api/payments", verifyToken, (req, res) => {
+  let { page, limit } = req.query;
+
+  page = parseInt(page, 10);
+  limit = parseInt(limit, 10);
+
+  if (isNaN(page) || isNaN(limit) || page <= 0 || limit <= 0) {
+    return res
+      .status(400)
+      .json({ error: "Parámetros de paginación inválidos" });
+  }
+
+  const offset = (page - 1) * limit;
+
+  const paymentsQuery = `
+    SELECT 
+      p.user_id,
+      p.clientTransactionId,
+      p.transactionId,
+      p.transactionStatus,
+      p.amount,
+      p.date,
+      u.display_name AS name
+    FROM cdx_txt_payments p
+    LEFT JOIN cdx_users u ON p.user_id = u.ID
+    ORDER BY p.date DESC
+    LIMIT ? OFFSET ?
+  `;
+
+  db.query(paymentsQuery, [limit, offset], (err, paymentsResult) => {
+    if (err) {
+      console.error("Error al obtener pagos:", err);
+      return res
+        .status(500)
+        .json({ error: "Error interno al obtener pagos" });
+    }
+
+    const totalQuery = `
+      SELECT COUNT(*) AS total
+      FROM cdx_txt_payments
+    `;
+
+    db.query(totalQuery, (err, totalResult) => {
+      if (err) {
+        console.error("Error al contar pagos:", err);
+        return res
+          .status(500)
+          .json({ error: "Error interno al contar pagos" });
+      }
+
+      res.status(200).json({
+        page,
+        limit,
+        total: totalResult[0].total,
+        payments: paymentsResult,
+      });
+    });
+  });
+});
+
+
 // ************* Endpoint para obtener la información general de un usuario, con fines administrativos  ************* //
 
 app.get("/api/user-data/:id", verifyToken, (req, res) => {
