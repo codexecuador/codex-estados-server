@@ -147,7 +147,7 @@ app.post("/login", (req, res) => {
 
   // Verificar si el usuario existe en la base de datos
   db.query(
-    'SELECT * FROM cdx_users WHERE user_login = ? OR user_email = ?', 
+    "SELECT * FROM cdx_users WHERE user_login = ? OR user_email = ?",
     [username, username],
     async (error, results) => {
       if (error) {
@@ -185,7 +185,7 @@ app.post("/login", (req, res) => {
                     userName: user.display_name,
                     userLevel: userLevel,
                   },
-                  "CDX_2Q@UX]7n\i&4"
+                  "CDX_2Q@UX]7ni&4"
                 );
 
                 res.json({ token });
@@ -209,7 +209,7 @@ const verifyToken = (req, res, next) => {
   if (!token)
     return res.status(401).json({ message: "No hay token proporcionado" });
 
-  jwt.verify(token.split(" ")[1], "CDX_2Q@UX]7n\i&4", (err, decoded) => {
+  jwt.verify(token.split(" ")[1], "CDX_2Q@UX]7ni&4", (err, decoded) => {
     if (err) {
       return res.status(403).json({ message: "Token inválido" });
     }
@@ -471,9 +471,7 @@ app.get("/api/payments", verifyToken, (req, res) => {
   db.query(paymentsQuery, [limit, offset], (err, paymentsResult) => {
     if (err) {
       console.error("Error al obtener pagos:", err);
-      return res
-        .status(500)
-        .json({ error: "Error interno al obtener pagos" });
+      return res.status(500).json({ error: "Error interno al obtener pagos" });
     }
 
     const totalQuery = `
@@ -484,9 +482,7 @@ app.get("/api/payments", verifyToken, (req, res) => {
     db.query(totalQuery, (err, totalResult) => {
       if (err) {
         console.error("Error al contar pagos:", err);
-        return res
-          .status(500)
-          .json({ error: "Error interno al contar pagos" });
+        return res.status(500).json({ error: "Error interno al contar pagos" });
       }
 
       res.status(200).json({
@@ -498,7 +494,6 @@ app.get("/api/payments", verifyToken, (req, res) => {
     });
   });
 });
-
 
 // ************* Endpoint para obtener la información general de un usuario, con fines administrativos  ************* //
 
@@ -808,13 +803,11 @@ app.put("/api/update-enterprises", verifyToken, (req, res) => {
               .json({ error: "Error interno al insertar registro" });
           }
 
-          return res
-            .status(201)
-            .json({
-              success: true,
-              message:
-                "Registro creado y número de empresas actualizado correctamente",
-            });
+          return res.status(201).json({
+            success: true,
+            message:
+              "Registro creado y número de empresas actualizado correctamente",
+          });
         }
       );
     } else {
@@ -829,12 +822,10 @@ app.put("/api/update-enterprises", verifyToken, (req, res) => {
               .json({ error: "Error interno al actualizar empresas" });
           }
 
-          return res
-            .status(200)
-            .json({
-              success: true,
-              message: "Número de empresas actualizado correctamente",
-            });
+          return res.status(200).json({
+            success: true,
+            message: "Número de empresas actualizado correctamente",
+          });
         }
       );
     }
@@ -1013,6 +1004,7 @@ app.post("/confirm-payment", (req, res) => {
         `INSERT INTO cdx_txt_payments 
          (user_id, date, amount, clientTransactionId, transactionId, transactionStatus) 
          VALUES (?, ?, ?, ?, ?, ?)`,
+
         [
           userId,
           date,
@@ -1027,26 +1019,32 @@ app.post("/confirm-payment", (req, res) => {
             return res.status(500).json({ error: "Error al insertar el pago" });
           }
 
-          // Actualizar el valor de enterprises en cdx_txt_enterprises
-          db.query(
-            `UPDATE cdx_txt_enterprises 
-             SET enterprises = enterprises + 1 
-             WHERE user_id = ?`,
-            [userId],
-            (err) => {
-              if (err) {
-                console.error("Error al actualizar enterprises:", err);
-                return res
-                  .status(500)
-                  .json({ error: "Error al actualizar enterprises" });
-              }
+          // Verificar si transactionStatus es "Approved" antes de actualizar enterprises
+          if (transactionStatus === "Approved") {
+            db.query(
+              `UPDATE cdx_txt_enterprises 
+               SET enterprises = enterprises + 1 
+               WHERE user_id = ?`,
+              [userId],
+              (err) => {
+                if (err) {
+                  console.error("Error al actualizar enterprises:", err);
+                  return res
+                    .status(500)
+                    .json({ error: "Error al actualizar enterprises" });
+                }
 
-              res.status(201).json({
-                message:
-                  "Pago registrado y enterprises actualizado correctamente",
-              });
-            }
-          );
+                return res.status(201).json({
+                  message:
+                    "Pago registrado y enterprises actualizado correctamente",
+                });
+              }
+            );
+          } else {
+            return res.status(201).json({
+              message: "Pago registrado, pero enterprises no se actualizó",
+            });
+          }
         }
       );
     }
