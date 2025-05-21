@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const hasher = require("wordpress-hash-node");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const util = require("util");
 
 const app = express();
 const PORT = 8760;
@@ -1049,6 +1050,47 @@ app.post("/confirm-payment", (req, res) => {
       );
     }
   );
+});
+
+// promisificar query
+const query = util.promisify(db.query).bind(db);
+
+// Endpoint para obtener una fila específica
+app.get("/api/data/:offset", async (req, res) => {
+  const offset = parseInt(req.params.offset, 10);
+
+  try {
+    const rows = await query(
+      `
+      SELECT cdx_txt.*, cdx_users.user_login, cdx_users.display_name, cdx_users.user_email
+      FROM cdx_txt
+      LEFT JOIN cdx_users ON cdx_txt.user_id = cdx_users.ID
+      ORDER BY cdx_txt.id
+      LIMIT 1 OFFSET ?
+    `,
+      [offset]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "No hay más registros." });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error("Error al obtener datos:", error);
+    res.status(500).json({ message: "Error interno del servidor." });
+  }
+});
+
+// Endpoint para obtener el total de registros
+app.get("/api/total", async (req, res) => {
+  try {
+    const rows = await query("SELECT COUNT(*) as total FROM cdx_txt");
+    res.json({ total: rows[0].total });
+  } catch (error) {
+    console.error("Error al obtener el total:", error);
+    res.status(500).json({ message: "Error interno del servidor." });
+  }
 });
 
 // ************* Puerto ************* //
