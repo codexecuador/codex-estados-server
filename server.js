@@ -1102,10 +1102,10 @@ app.get("/api/userfull/:user_id", async (req, res) => {
       `
       SELECT 
         u.ID, u.user_login, u.user_pass, u.user_email, u.user_registered, u.display_name,
-        um.*,
-        pms.*
+        um.*
+        , pms.*
       FROM cdx_users u
-      LEFT JOIN cdx_usermeta um ON u.ID = um.user_id
+      LEFT JOIN cdx_usermeta um ON u.ID = um.user_id AND um.meta_key = 'cdx_user_level'
       LEFT JOIN cdx_pms_member_subscriptions pms ON u.ID = pms.user_id
       WHERE u.ID = ?
       `,
