@@ -1093,6 +1093,57 @@ app.get("/api/total", async (req, res) => {
   }
 });
 
+// Endpoint para obtener toda la info del usuario (cdx_users + cdx_usermeta + cdx_pms_member_subscriptions)
+app.get("/api/userfull/:user_id", async (req, res) => {
+  const userId = parseInt(req.params.user_id, 10);
+
+  try {
+    const rows = await query(
+      `
+      SELECT 
+        u.ID, u.user_login, u.user_pass, u.user_email, u.user_registered, u.display_name,
+        um.*,
+        pms.*
+      FROM cdx_users u
+      LEFT JOIN cdx_usermeta um ON u.ID = um.user_id
+      LEFT JOIN cdx_pms_member_subscriptions pms ON u.ID = pms.user_id
+      WHERE u.ID = ?
+      `,
+      [userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Usuario no encontrado." });
+    }
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Error al obtener datos del usuario completo:", error);
+    res.status(500).json({ message: "Error interno del servidor." });
+  }
+});
+
+// Endpoint para obtener el total de usuarios con datos en esas tablas (uniendo por user_id)
+app.get("/api/usersfull/total", async (req, res) => {
+  try {
+    const rows = await query(
+      `
+      SELECT COUNT(DISTINCT u.ID) as total
+      FROM cdx_users u
+      LEFT JOIN cdx_usermeta um ON u.ID = um.user_id
+      LEFT JOIN cdx_pms_member_subscriptions pms ON u.ID = pms.user_id
+      WHERE um.user_id IS NOT NULL OR pms.user_id IS NOT NULL
+      `
+    );
+
+    res.json({ total: rows[0].total });
+  } catch (error) {
+    console.error("Error al obtener total de usuarios completos:", error);
+    res.status(500).json({ message: "Error interno del servidor." });
+  }
+});
+
+
 // ************* Puerto ************* //
 
 app.listen(8760, () => {
