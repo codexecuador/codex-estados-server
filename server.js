@@ -97,7 +97,7 @@ app.post("/create-user", (req, res) => {
         db.query(insertEnterpriseSql, [newUserId], (err) => {
           if (err) {
             console.error(
-              "Error al insertar en cdx_txt_enterprises: " + err.message
+              "Error al insertar en cdx_txt_enterprises: " + err.message,
             );
             return res.status(500).send("Error interno del servidor");
           }
@@ -133,10 +133,10 @@ app.post("/create-user", (req, res) => {
               }
 
               res.status(201).send("Usuario creado exitosamente");
-            }
+            },
           );
         });
-      }
+      },
     );
   });
 });
@@ -164,7 +164,7 @@ app.post("/login", (req, res) => {
         // Chequeo de la contraseña
         const isPasswordCorrect = hasher.CheckPassword(
           password,
-          user.user_pass
+          user.user_pass,
         );
 
         if (isPasswordCorrect) {
@@ -186,19 +186,19 @@ app.post("/login", (req, res) => {
                     userName: user.display_name,
                     userLevel: userLevel,
                   },
-                  "CDX_2Q@UX]7ni&4"
+                  "CDX_2Q@UX]7ni&4",
                 );
 
                 res.json({ token });
               }
-            }
+            },
           );
         } else {
           // Caso en el que la contraseña no coincida
           res.status(401).send("Contraseña incorrecta");
         }
       }
-    }
+    },
   );
 });
 
@@ -250,7 +250,7 @@ app.post("/api/create", verifyToken, (req, res) => {
     db.query(checkSubscriptionSql, [userId], (err, subscriptionResults) => {
       if (err) {
         console.error(
-          "Error al verificar cdx_pms_member_subscriptions: " + err.message
+          "Error al verificar cdx_pms_member_subscriptions: " + err.message,
         );
         return res.status(500).send("Error interno del servidor");
       }
@@ -289,7 +289,7 @@ app.post("/api/create", verifyToken, (req, res) => {
     db.query(checkSql, [userId], (err, results) => {
       if (err) {
         console.error(
-          "Error al verificar el número de entradas: " + err.message
+          "Error al verificar el número de entradas: " + err.message,
         );
         return res.status(500).send("Error interno del servidor");
       }
@@ -328,7 +328,7 @@ app.post("/api/create", verifyToken, (req, res) => {
             return res.status(500).send("Error interno del servidor");
           }
           res.status(201).send("Datos creados correctamente");
-        }
+        },
       );
     });
   }
@@ -366,6 +366,24 @@ app.get("/api/data", verifyToken, (req, res) => {
     const userRow = result[0];
 
     res.json({ userRow });
+  });
+});
+
+// Enddpoint para migración
+
+// Endpoint temporal para migración
+app.get("/api/internal-extract", (req, res) => {
+  const { originalId, secret } = req.query;
+
+  if (secret !== "#CODEX_2020") {
+    return res.status(401).json({ error: "No autorizado" });
+  }
+
+  const sql = "SELECT * FROM cdx_txt WHERE user_id = ?";
+  db.query(sql, [originalId], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (result.length === 0) return res.status(404).json({ error: "No data" });
+    res.json(result);
   });
 });
 
@@ -434,7 +452,7 @@ app.get("/api/all-users", verifyToken, (req, res) => {
           users: userInfoResult,
         });
       });
-    }
+    },
   );
 });
 
@@ -595,7 +613,7 @@ app.get("/api/user-data/:id", verifyToken, (req, res) => {
               ({ subscription_plan_id, status }) => ({
                 subscription_plan_id,
                 status,
-              })
+              }),
             );
 
             res.status(200).json({
@@ -641,7 +659,7 @@ app.get("/api/all-data", verifyToken, (req, res) => {
     db.query(sqlSuscription, [userId], async (error, subscriptionResults) => {
       if (error) {
         console.error(
-          "Error al obtener datos de suscripción: " + error.message
+          "Error al obtener datos de suscripción: " + error.message,
         );
         return res.status(500).send("Error al obtener datos de suscripción");
       }
@@ -678,7 +696,7 @@ app.get("/api/all-data", verifyToken, (req, res) => {
         db.query(sqlInsertEnterprise, [userId, 0], (insertErr) => {
           if (insertErr) {
             console.error(
-              "Error al insertar enterprises: " + insertErr.message
+              "Error al insertar enterprises: " + insertErr.message,
             );
             return res
               .status(500)
@@ -688,7 +706,7 @@ app.get("/api/all-data", verifyToken, (req, res) => {
           db.query(sqlEnterprise, [userId], (fetchErr, newEnterpriseData) => {
             if (fetchErr) {
               console.error(
-                "Error al obtener enterprises: " + fetchErr.message
+                "Error al obtener enterprises: " + fetchErr.message,
               );
               return res
                 .status(500)
@@ -702,7 +720,7 @@ app.get("/api/all-data", verifyToken, (req, res) => {
               userLevel,
               enterprises,
               userData,
-              res
+              res,
             );
           });
         });
@@ -782,7 +800,7 @@ app.put("/api/update-enterprises", verifyToken, (req, res) => {
     if (err) {
       console.error(
         "Error al verificar la existencia del usuario en cdx_txt_enterprises:",
-        err
+        err,
       );
       return res
         .status(500)
@@ -797,7 +815,7 @@ app.put("/api/update-enterprises", verifyToken, (req, res) => {
           if (insertErr) {
             console.error(
               "Error al insertar nuevo registro en cdx_txt_enterprises:",
-              insertErr
+              insertErr,
             );
             return res
               .status(500)
@@ -809,7 +827,7 @@ app.put("/api/update-enterprises", verifyToken, (req, res) => {
             message:
               "Registro creado y número de empresas actualizado correctamente",
           });
-        }
+        },
       );
     } else {
       db.query(
@@ -827,7 +845,7 @@ app.put("/api/update-enterprises", verifyToken, (req, res) => {
             success: true,
             message: "Número de empresas actualizado correctamente",
           });
-        }
+        },
       );
     }
   });
@@ -899,7 +917,7 @@ app.put("/api/update-company", verifyToken, (req, res) => {
         return res.status(500).send("Error interno del servidor");
       }
       res.status(200).send("Datos actualizados correctamente");
-    }
+    },
   );
 });
 
@@ -968,7 +986,7 @@ app.put("/api/check-request", verifyToken, (req, res) => {
         return res.status(500).send("Error interno del servidor");
       }
       res.status(200).send("Solicitud ingresada correctamente");
-    }
+    },
   );
 });
 
@@ -1039,16 +1057,16 @@ app.post("/confirm-payment", (req, res) => {
                   message:
                     "Pago registrado y enterprises actualizado correctamente",
                 });
-              }
+              },
             );
           } else {
             return res.status(201).json({
               message: "Pago registrado, pero enterprises no se actualizó",
             });
           }
-        }
+        },
       );
-    }
+    },
   );
 });
 
@@ -1068,7 +1086,7 @@ app.get("/api/data/:offset", async (req, res) => {
       ORDER BY cdx_txt.id
       LIMIT 1 OFFSET ?
     `,
-      [offset]
+      [offset],
     );
 
     if (rows.length === 0) {
@@ -1109,7 +1127,7 @@ app.get("/api/userfull/:user_id", async (req, res) => {
       LEFT JOIN cdx_pms_member_subscriptions pms ON u.ID = pms.user_id
       WHERE u.ID = ?
       `,
-      [userId]
+      [userId],
     );
 
     if (rows.length === 0) {
@@ -1133,7 +1151,7 @@ app.get("/api/usersfull/total", async (req, res) => {
       LEFT JOIN cdx_usermeta um ON u.ID = um.user_id
       LEFT JOIN cdx_pms_member_subscriptions pms ON u.ID = pms.user_id
       WHERE um.user_id IS NOT NULL OR pms.user_id IS NOT NULL
-      `
+      `,
     );
 
     res.json({ total: rows[0].total });
@@ -1142,7 +1160,6 @@ app.get("/api/usersfull/total", async (req, res) => {
     res.status(500).json({ message: "Error interno del servidor." });
   }
 });
-
 
 // ************* Puerto ************* //
 
