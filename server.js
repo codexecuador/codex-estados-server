@@ -375,7 +375,7 @@ app.get("/api/data", verifyToken, (req, res) => {
 app.get("/api/internal-extract", (req, res) => {
   const { originalId, secret } = req.query;
 
-  if (secret !== "#CODEX_2020") {
+  if (secret !== "CODEX_2020_MIGRACION_SUPER_COOL") {
     return res.status(401).json({ error: "No autorizado" });
   }
 
