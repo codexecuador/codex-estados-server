@@ -371,7 +371,7 @@ app.get("/api/data", verifyToken, (req, res) => {
 
 // Enddpoint para migración
 
-// Endpoint temporal para migración
+// Endpoint temporal para migración (V2 con allowedEnterprises)
 app.get("/api/internal-extract", (req, res) => {
   const { originalId, secret } = req.query;
 
@@ -379,11 +379,26 @@ app.get("/api/internal-extract", (req, res) => {
     return res.status(401).json({ error: "No autorizado" });
   }
 
-  const sql = "SELECT * FROM cdx_txt WHERE user_id = ?";
-  db.query(sql, [originalId], (err, result) => {
+  // 1. Buscamos el límite de empresas
+  const sqlEnterprises = "SELECT enterprises FROM cdx_txt_enterprises WHERE user_id = ?";
+  
+  db.query(sqlEnterprises, [originalId], (err, entResult) => {
     if (err) return res.status(500).json({ error: err.message });
-    if (result.length === 0) return res.status(404).json({ error: "No data" });
-    res.json(result);
+    
+    // Si no tiene registro, asumimos 0 o un valor por defecto
+    const allowedEnterprises = entResult.length > 0 ? entResult[0].enterprises : 0;
+
+    // 2. Buscamos los datos financieros
+    const sqlData = "SELECT * FROM cdx_txt WHERE user_id = ?";
+    db.query(sqlData, [originalId], (err, dataResult) => {
+      if (err) return res.status(500).json({ error: err.message });
+      
+      // Enviamos un objeto que contenga ambas cosas
+      res.json({
+        allowedEnterprises,
+        financialRows: dataResult // Esto es lo que antes era el array directo
+      });
+    });
   });
 });
 
